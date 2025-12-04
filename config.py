@@ -40,7 +40,7 @@ class config:
     ALIVE_IMG_URL = "https://files.catbox.moe/7m98k1.mp4"
 
     
-    MONGODB_URI = "mongodb+srv://Alisha:Alisha123@cluster0.yqcpftw.mongodb.net/?retryWrites=true&w=majority" 
+    MONGODB_URI = "mongodb+srv://ronin:Ronin1122@cluster0.x0r3tzc.mongodb.net/?appName=Cluster0" 
     DATABASE_NAME = "test"
 
     #API
