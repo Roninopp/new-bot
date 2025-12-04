@@ -3,11 +3,11 @@
 class config:
     
     #Client
-    API_ID = 26249286
-    API_HASH = "4e3bf0b014fda4ac752e8f4ab854279b"
-    BOT_TOKEN = "8257032968:AAGxNcDh8D10jJnybQOESBBY503H2Rv1k7I"
-    BOT_NAME = "test"
-    BOT_USERNAME = "VanitasXRobot"
+    API_ID = 7217645
+    API_HASH = "78ba6352dd5cdc166fdef5aa84ba7c67"
+    BOT_TOKEN = "8521895709:AAEbq9gKv7xAaDQ2Vtcb_R4AtjRTQoKrhxM"
+    BOT_NAME = "Maria"
+    BOT_USERNAME = "@MariaModBot"
     BOT_ID = 8040764357
     WORKERS = 30
     MAX_MESSAGE_CACHE_SIZE = 100
@@ -18,14 +18,14 @@ class config:
     ]
      
     #Git
-    GIT_USERNAME = "Slayer123700"
+    GIT_USERNAME = "Roninopp"
     GIT_URL_WITH_TOKEN = "https://Your_Git_Token@github.com/slayer123700/Yumeko.git" 
 
 
     #Info
     BOT_VERSION = "x"
-    OWNER_ID = 6138142369
-    OWNER_USERNAME = "zeni_og"
+    OWNER_ID = 6837532865
+    OWNER_USERNAME = "Dushmanxroninn"
     SUPPORT_CHAT = -1001997798206
     SUPPORT_CHAT_USERNAME = "midexoz_Support"
     SUPPORT_CHAT_LINK = "https://t.me/midexoz_Support"
