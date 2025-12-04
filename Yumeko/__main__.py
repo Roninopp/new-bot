@@ -1,4 +1,3 @@
-
 import os
 import importlib
 import asyncio
@@ -21,7 +20,6 @@ from pyrogram import Client
 
 MODULES = ["modules", "watchers", "admin", "decorator"]
 LOADED_MODULES = {}
-
 
 
 STICKER_FILE_ID = random.choices(config.START_STICKER_FILE_ID, weights=[1, 1])[0]
@@ -75,7 +73,7 @@ def get_paginated_buttons(page=1, items_per_page=15):
             InlineKeyboardButton(">", callback_data=f"area_{page + 1}")
         ])
         button_rows.append([
-            InlineKeyboardButton("ᴄʟᴏsᴇ", callback_data="delete")
+            InlineKeyboardButton("🗑ᴄʟᴏsᴇ", callback_data="delete")
         ])
         button_rows.append([
             InlineKeyboardButton("Bᴀᴄᴋ", callback_data="st_back")
@@ -102,44 +100,68 @@ def get_paginated_buttons(page=1, items_per_page=15):
 
     return InlineKeyboardMarkup(button_rows)
 
-# Helper to generate the main menu buttons
+# Helper to generate the main menu buttons (UPDATED FOR MARIA)
 def get_main_menu_buttons():
     buttons = [
         [
             InlineKeyboardButton(
-                "➕ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ", url=f"https://t.me/{app.me.username}?startgroup=true"
+                "➕ Add Me To Group", url=f"https://t.me/{app.me.username}?startgroup=true"
             )
         ],
         [
-            InlineKeyboardButton("🤝 Sᴜᴘᴘᴏʀᴛ", url=config.SUPPORT_CHAT_LINK),
-            InlineKeyboardButton("👑 ᴏᴡɴᴇʀ", user_id=config.OWNER_ID)
+            InlineKeyboardButton("📚 Help & Commands", callback_data="yumeko_help"),
+            InlineKeyboardButton("ℹ️ About", callback_data="yumeko_about")
         ],
         [
-            InlineKeyboardButton("Cᴏᴍᴍᴀɴᴅs", callback_data="yumeko_help"),
+            InlineKeyboardButton("📢 Updates", url=config.SUPPORT_CHAT_LINK),
         ]
     ]
     return InlineKeyboardMarkup(buttons)
 
+# Callback for the "Back" button (UPDATED TO MATCH START TEXT)
 @app.on_callback_query(filters.regex("st_back"))
 @error
 async def start_lol(_, c : CallbackQuery):
         
     user_mention = c.from_user.mention(style="md")
-    bot_mention = app.me.mention(style="md")
+    
+    txt = (
+        f"👋 **Hello {user_mention}!**\n\n"
+        f"I'm **Maria ❄️** - Your Advanced Group Management Bot!\n\n"
+        f"✨ **What I Can Do:**\n"
+        f"• 🛡️ Complete Admin Tools\n"
+        f"• 🔒 Advanced Lock System\n"
+        f"• 🎮 Fun Interactive Commands\n"
+        f"• 📊 Database Management\n"
+        f"• ⚡ Lightning Fast Performance\n\n"
+        f"🚀 **Get Started:**\n"
+        f"Add me to your group and make me admin to unlock all features!"
+    )
+
     await c.message.edit(
-        text =f"**ʜᴇʏ, {user_mention} [🫧]({config.START_IMG_URL}) **\n\n"
-        f"**ɪ ᴀᴍ {bot_mention}! \n\n <blockquote>⌥ ᴀɴ ᴀᴅᴠᴀɴᴄᴇ & ꜰᴀꜱᴛ ɢʀᴏᴜᴘ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ ʙᴏᴛ ᴡɪᴛʜ ᴀɴɪᴍᴇ ꜰᴇᴀᴛᴜʀᴇꜱ<blockquote>**\n"
-        f" **──────────────────\n"
-        "・ᴛᴀɢ ᴀʟʟ ᴇᴠᴇʀʏ ᴍᴇᴍʙᴇʀ.\n"
-        "・ɪᴍᴘᴏꜱᴛᴇʀ ᴅᴇᴛᴇᴄᴛᴏʀ.\n"
-        "・ꜱᴘᴀᴍ ᴘʀᴏᴛᴇᴄᴛɪᴏɴ.\n"
-        "・ғᴜɴ ᴀɴᴅ ᴇɴɢᴀɢɪɴɢ ғᴇᴀᴛᴜʀᴇs\n"
-        "──────────────────**\n\n"
-        f"**▸ ᴛᴀᴘ ᴏɴ ʜᴇʟᴘ ᴍᴇɴᴜ ᴀɴᴅ ᴍᴜꜱɪᴄ ʙᴜᴛᴛᴏɴ ᴛᴏ ʟᴇᴀʀɴ ᴍᴏʀᴇ ᴀʙᴏᴜᴛ**  {bot_mention}.",
+        text=txt,
         reply_markup=get_main_menu_buttons(),
         invert_media = True
     )
 
+# Callback for the "About" button (NEW ADDITION)
+@app.on_callback_query(filters.regex("yumeko_about"))
+@error
+async def about_section(_, clb: CallbackQuery):
+    await clb.message.edit(
+        text=(
+            "**ℹ️ About Maria**\n\n"
+            "Maria is a powerful group management bot built with Python and Pyrogram.\n"
+            "We aim to make Telegram group management easy and fun!\n\n"
+            f"**Developer:** [Owner](tg://user?id={config.OWNER_ID})"
+        ),
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🔙 Back", callback_data="st_back")
+            ]
+        ]),
+        disable_web_page_preview=True
+    )
 
 @app.on_callback_query(filters.regex("source_code"))
 @error
@@ -181,17 +203,22 @@ async def start_cmd(_, message : Message):
     await sleep(0.2)
     
     user_mention = message.from_user.mention(style="md")
-    bot_mention = app.me.mention(style="md")
+    
+    txt = (
+        f"👋 **Hello {user_mention}!**\n\n"
+        f"I'm **Maria ❄️** - Your Advanced Group Management Bot!\n\n"
+        f"✨ **What I Can Do:**\n"
+        f"• 🛡️ Complete Admin Tools\n"
+        f"• 🔒 Advanced Lock System\n"
+        f"• 🎮 Fun Interactive Commands\n"
+        f"• 📊 Database Management\n"
+        f"• ⚡ Lightning Fast Performance\n\n"
+        f"🚀 **Get Started:**\n"
+        f"Add me to your group and make me admin to unlock all features!"
+    )
+
     await message.reply(
-        text =         f"**ʜᴇʏ, {user_mention} [🫧]({config.START_IMG_URL}) **\n\n"
-        f"**ɪ ᴀᴍ {bot_mention}! \n\n <blockquote>⌥ ᴀɴ ᴀᴅᴠᴀɴᴄᴇ & ꜰᴀꜱᴛ ɢʀᴏᴜᴘ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ ʙᴏᴛ ᴡɪᴛʜ ᴀɴɪᴍᴇ ꜰᴇᴀᴛᴜʀᴇꜱ<blockquote>**\n"
-        f" **──────────────────\n"
-        "・ᴛᴀɢ ᴀʟʟ ᴇᴠᴇʀʏ ᴍᴇᴍʙᴇʀ.\n"
-        "・ɪᴍᴘᴏꜱᴛᴇʀ ᴅᴇᴛᴇᴄᴛᴏʀ.\n"
-        "・ꜱᴘᴀᴍ ᴘʀᴏᴛᴇᴄᴛɪᴏɴ.\n"
-        "・ғᴜɴ ᴀɴᴅ ᴇɴɢᴀɢɪɴɢ ғᴇᴀᴛᴜʀᴇs\n"
-        "──────────────────**\n\n"
-        f"**▸ ᴛᴀᴘ ᴏɴ ʜᴇʟᴘ ᴍᴇɴᴜ ᴀɴᴅ ᴍᴜꜱɪᴄ ʙᴜᴛᴛᴏɴ ᴛᴏ ʟᴇᴀʀɴ ᴍᴏʀᴇ ᴀʙᴏᴜᴛ**  {bot_mention}.",
+        text=txt,
         reply_markup=get_main_menu_buttons(),
         invert_media = True ,
         message_effect_id= 5046509860389126442
@@ -298,7 +325,6 @@ async def start_command(client, message: Message):
              f"𝖢𝗅𝗂𝖼𝗄 𝗍𝗁𝖾 𝖻𝗎𝗍𝗍𝗈𝗇 𝖻𝖾𝗅𝗈𝗐 𝗍𝗈 𝖾𝗑𝗉𝗅𝗈𝗋𝖾 𝗆𝗒 𝖿𝖾𝖺𝗍𝗎𝗋𝖾𝗌 𝖺𝗇𝖽 𝖼𝗈𝗆𝗆𝖺𝗇𝖽𝗌!",
         reply_markup=button
     )
-
 
 
 if __name__ == "__main__":
