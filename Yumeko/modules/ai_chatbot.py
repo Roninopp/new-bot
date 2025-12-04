@@ -6,8 +6,8 @@ import re
 import google.generativeai as genai
 import edge_tts
 from pyrogram import Client, filters, enums
-from Yumeko import app  # <--- Changed from Client to app
-from config import config # <--- Using your config system
+from Yumeko import app
+from config import config
 from Yumeko.decorator.errors import error
 from Yumeko.decorator.save import save
 
@@ -15,14 +15,15 @@ from Yumeko.decorator.save import save
 logger = logging.getLogger("MariaAI")
 
 # --- CONFIGURATION ---
-# We try to get the key from your config.py
 GEMINI_KEY = getattr(config, "GEMINI_API_KEY", None)
-MODEL_NAME = "gemini-1.5-flash" # Updated to faster model
+
+# ✅ FIX 1: Using Stable Model Version
+MODEL_NAME = "gemini-1.5-flash"
 
 # --- VOICE SETTINGS (NATURAL FEMALE VOICE) ---
 VOICE_MODEL = "hi-IN-SwaraNeural"
-VOICE_RATE = "+5%"      # Slightly faster = more natural
-VOICE_PITCH = "+15Hz"   # Higher pitch = younger sound
+VOICE_RATE = "+5%"
+VOICE_PITCH = "+15Hz"
 
 # --- CONNECTION ---
 model = None
@@ -128,11 +129,15 @@ smart_filter = filters.create(is_targeted)
 
 # --- HANDLERS (USING @app) ---
 
-@app.on_message(filters.text & ~filters.bot & smart_filter, group=10)
+# ✅ FIX 2: group=-5 ensures this runs BEFORE other modules
+@app.on_message(filters.text & ~filters.bot & smart_filter, group=-5)
 @error
 @save
 async def ai_chat_handler(client, message):
     if not model: return
+
+    # ✅ FIX 3: Debug Log - Check your VPS terminal for this!
+    logger.info(f"📨 AI received message: {message.text[:20]}...") 
 
     chat_id = message.chat.id
     user_text = message.text
@@ -167,9 +172,12 @@ async def ai_chat_handler(client, message):
 
         if mode == "voice":
             voice_reminder = "\n[REMINDER: Keep sentences SHORT. This will be spoken aloud.]"
-            chat = model.start_chat(history=chat_memory[chat_id][:-1])
-            response = await chat.send_message_async(user_text + voice_reminder)
+            # Updated async method for pyrogram safety
+            response = await model.generate_content_async(
+                contents=[{"role": "user", "parts": [user_text + voice_reminder]}]
+            )
         else:
+            # Updated async method
             chat = model.start_chat(history=chat_memory[chat_id][:-1])
             response = await chat.send_message_async(user_text)
             
