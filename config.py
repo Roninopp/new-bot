@@ -8,7 +8,7 @@ class config:
     BOT_TOKEN = "8521895709:AAEbq9gKv7xAaDQ2Vtcb_R4AtjRTQoKrhxM"
     BOT_NAME = "Maria"
     BOT_USERNAME = "@MariaModBot"
-    BOT_ID = 8040764357
+    BOT_ID = 8521895709
     WORKERS = 30
     MAX_MESSAGE_CACHE_SIZE = 100
     MAX_CONCURRENT_TRANSMISSIONS = 10
@@ -26,11 +26,11 @@ class config:
     BOT_VERSION = "x"
     OWNER_ID = 6837532865
     OWNER_USERNAME = "Dushmanxroninn"
-    SUPPORT_CHAT = -1001997798206
-    SUPPORT_CHAT_USERNAME = "midexoz_Support"
-    SUPPORT_CHAT_LINK = "https://t.me/midexoz_Support"
-    LOG_CHANNEL = -1002116643591
-    ERROR_LOG_CHANNEL = -1002116643591
+    SUPPORT_CHAT = -1003103484269
+    SUPPORT_CHAT_USERNAME = "black_hawk_support"
+    SUPPORT_CHAT_LINK = "https://t.me/Black_Hawk_Support"
+    LOG_CHANNEL = -1003103484269
+    ERROR_LOG_CHANNEL = -1003103484269
     DOWNLOAD_LOCATION = "./downloads"
     COMMAND_PREFIXES = ["/" , "!" , "." , "#" , "$" , "%" , "&" , "?"] 
     CMD_STARTERS = "/.!&#%$"
