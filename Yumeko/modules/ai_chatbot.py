@@ -17,7 +17,7 @@ logger = logging.getLogger("MariaAI")
 # --- CONFIGURATION ---
 # We try to get the key from your config.py
 GEMINI_KEY = getattr(config, "GEMINI_API_KEY", None)
-MODEL_NAME = "gemini-2.0-flash" # Updated to faster model
+MODEL_NAME = "gemini-1.5-flash" # Updated to faster model
 
 # --- VOICE SETTINGS (NATURAL FEMALE VOICE) ---
 VOICE_MODEL = "hi-IN-SwaraNeural"
