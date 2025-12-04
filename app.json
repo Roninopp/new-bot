@@ -1,0 +1,74 @@
+{
+  "name": "Yumekoo Telegram Bot",
+  "description": "A Pyrogram-based advanced Telegram bot.",
+  "repository": "https://github.com/paradox-zenu/Yumeko.git",
+  "keywords": ["telegram", "bot", "pyrogram", "heroku", "mongodb"],
+  "env": {
+    "API_ID": {
+      "description": "Telegram API ID from my.telegram.org",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Telegram API HASH from my.telegram.org",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Telegram bot token from @BotFather",
+      "required": true
+    },
+    "MONGODB_URI": {
+      "description": "MongoDB URI (from MongoDB Atlas or similar)",
+      "required": true
+    },
+    "DATABASE_NAME": {
+      "description": "Database name to use in MongoDB",
+      "required": false,
+      "value": "test"
+    },
+    "OWNER_ID": {
+      "description": "Owner's Telegram user ID",
+      "required": true
+    },
+    "LOG_CHANNEL": {
+      "description": "Log channel ID (e.g., -100xxxx)",
+      "required": true
+    },
+    "SUPPORT_CHAT": {
+      "description": "Support chat ID or username",
+      "required": false,
+      "value": "-1002745123292"
+    },
+    "ARQ_API_KEY": {
+      "description": "ARQ API Key",
+      "required": false,
+      "value": "RLWCED-WZASYO-AWOLTB-ITBWTP-ARQ"
+    },
+    "ARQ_API_URL": {
+      "description": "ARQ API URL",
+      "required": false,
+      "value": "arq.hamker.dev"
+    },
+    "OPENAI_KEY": {
+      "description": "OpenAI API Key (optional)",
+      "required": false
+    },
+    "LYRICS_GENIUS_TOKEN": {
+      "description": "Genius.com API token for lyrics",
+      "required": false
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-apt"
+    },
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "free"
+    }
+  }
+}
