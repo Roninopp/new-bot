@@ -4,13 +4,40 @@ from datetime import datetime
 from Yumeko import app , AFK_REPLY_GROUP , AFK_RETURN_GROUP
 from Yumeko.database.afk_db import get_afk, set_afk, clear_afk , get_afk_by_username
 from Yumeko.helper.user import resolve_user_for_afk
-from Yumeko.vars import random_afk_message , random_afk_reply_message , random_back_online_message
 import random
 from Yumeko.helper.time import format_time_delta
 from pyrogram.enums import ParseMode
 from config import config 
 from Yumeko.decorator.errors import error
 from Yumeko.decorator.save import save 
+
+# --- NEW CLEAN MESSAGES (No more bad words) ---
+random_afk_message = [
+    "is now busy!",
+    "needs a break.",
+    "is going to sleep.",
+    "is watching anime.",
+    "went to touch grass.",
+    "is currently unavailable."
+]
+
+random_afk_reply_message = [
+    "is currently AFK!",
+    "is not here right now.",
+    "will be back soon.",
+    "is away from keyboard.",
+    "cannot reply at the moment.",
+    "is lost in another dimension."
+]
+
+random_back_online_message = [
+    "is back online!",
+    "has returned!",
+    "is finally back!",
+    "woke up from sleep!",
+    "returned from the void."
+]
+# ----------------------------------------------
 
 @app.on_message(
     filters.command(["afk", "brb"], prefixes=config.COMMAND_PREFIXES) 
