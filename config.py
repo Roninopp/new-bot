@@ -3,6 +3,8 @@
 class config:
     
     #Client
+    # In config.py
+GEMINI_API_KEY = ""
     API_ID = 7217645
     API_HASH = "78ba6352dd5cdc166fdef5aa84ba7c67"
     BOT_TOKEN = "8521895709:AAEbq9gKv7xAaDQ2Vtcb_R4AtjRTQoKrhxM"
