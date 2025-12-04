@@ -17,10 +17,11 @@ logger = logging.getLogger("MariaAI")
 # --- CONFIGURATION ---
 GEMINI_KEY = getattr(config, "GEMINI_API_KEY", None)
 
-# ✅ FIX: Switched to 'gemini-pro' (Universal compatibility)
-MODEL_NAME = "gemini-pro"
+# ✅ FINAL ATTEMPT: Using the latest stable standard model
+# (This requires the library update from Step 1)
+MODEL_NAME = "gemini-1.5-flash"
 
-# --- VOICE SETTINGS (NATURAL FEMALE VOICE) ---
+# --- VOICE SETTINGS ---
 VOICE_MODEL = "hi-IN-SwaraNeural"
 VOICE_RATE = "+5%"
 VOICE_PITCH = "+15Hz"
@@ -84,7 +85,6 @@ async def generate_voice(text, chat_id):
     """Generates natural-sounding voice with proper text processing"""
     file_path = f"voice_{chat_id}.mp3"
     
-    # Clean text logic
     clean_text = re.sub(r'[^\w\s,?.!áº½-]', '', text)
     clean_text = re.sub(r'\b(ha){2,}\b', 'haha', clean_text, flags=re.IGNORECASE)
     clean_text = re.sub(r'\b(he){2,}\b', 'hehe', clean_text, flags=re.IGNORECASE)
@@ -117,7 +117,6 @@ async def generate_voice(text, chat_id):
         logger.error(f"TTS Error: {e}")
         return None
 
-# --- FILTERS ---
 def is_targeted(filter, client, message):
     if message.chat.type == enums.ChatType.PRIVATE: return True
     if message.mentioned: return True
@@ -126,8 +125,6 @@ def is_targeted(filter, client, message):
     return False
 
 smart_filter = filters.create(is_targeted)
-
-# --- HANDLERS (USING @app) ---
 
 @app.on_message(filters.text & ~filters.bot & smart_filter, group=-5)
 @error
@@ -145,10 +142,7 @@ async def ai_chat_handler(client, message):
 
     if not user_text: return
 
-    # --- MODE SELECTION ---
     mode = "text" if random.random() < 0.6 else "voice"
-
-    # Command Override
     lower = user_text.lower()
     if any(x in lower for x in ["voice", "bol", "audio", "suno"]): mode = "voice"
     elif any(x in lower for x in ["text", "chat", "likh", "msg"]): mode = "text"
@@ -156,12 +150,10 @@ async def ai_chat_handler(client, message):
     action = enums.ChatAction.RECORD_AUDIO if mode == "voice" else enums.ChatAction.TYPING
     await client.send_chat_action(chat_id, action)
 
-    # Memory
     if chat_id not in chat_memory:
         chat_memory[chat_id] = [{"role": "user", "parts": [SYSTEM_PROMPT]}]
     chat_memory[chat_id].append({"role": "user", "parts": [user_text]})
 
-    # Generate
     try:
         if len(chat_memory[chat_id]) > 20:
             chat_memory[chat_id] = chat_memory[chat_id][-10:]
@@ -169,12 +161,12 @@ async def ai_chat_handler(client, message):
 
         if mode == "voice":
             voice_reminder = "\n[REMINDER: Keep sentences SHORT. This will be spoken aloud.]"
-            # Using standard generate_content_async for broader compatibility
+            # Using generate_content_async (Standard for 1.5-flash)
             response = await model.generate_content_async(
                 contents=[{"role": "user", "parts": [user_text + voice_reminder]}]
             )
         else:
-            # Using start_chat for text history context
+            # Standard generation
             chat = model.start_chat(history=chat_memory[chat_id][:-1])
             response = await chat.send_message_async(user_text)
             
@@ -183,7 +175,6 @@ async def ai_chat_handler(client, message):
         logger.error(f"Gemini Error: {e}")
         return
 
-    # Process
     clean_text = re.sub(r'\|(HAPPY|SAD|ANGRY|SURPRISED|LOVE)\|', '', raw_text).strip()
     
     emoji = "😊"
@@ -195,7 +186,6 @@ async def ai_chat_handler(client, message):
 
     chat_memory[chat_id].append({"role": "model", "parts": [clean_text]})
 
-    # Send
     try:
         if random.random() < 0.55:
             try: await message.react(emoji)
@@ -214,14 +204,8 @@ async def ai_chat_handler(client, message):
     except Exception as e:
         logger.error(f"Send Error: {e}")
 
-# --- MODULE INFO ---
 __module__ = "Chatbot"
 __help__ = """
 **🗣️ Maria AI Chatbot**
-
 Maria can talk to you in text and voice! Just reply to her or mention her.
-
-**Hidden Triggers:**
-- Say "voice", "bol", "audio" to force a voice reply.
-- Say "text", "likh" to force a text reply.
 """
