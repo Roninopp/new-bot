@@ -4,7 +4,7 @@ import asyncio
 import shutil
 from asyncio import sleep
 from pyrogram import idle, filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, Message
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, Message, InputMediaPhoto
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import random
 from Yumeko import app, log, scheduler
@@ -100,7 +100,7 @@ def get_paginated_buttons(page=1, items_per_page=15):
 
     return InlineKeyboardMarkup(button_rows)
 
-# Helper to generate the main menu buttons (UPDATED FOR MARIA)
+# Helper to generate the main menu buttons
 def get_main_menu_buttons():
     buttons = [
         [
@@ -118,7 +118,7 @@ def get_main_menu_buttons():
     ]
     return InlineKeyboardMarkup(buttons)
 
-# Callback for the "Back" button (UPDATED TO MATCH START TEXT)
+# Callback for the "Back" button (Switches back to Start Image)
 @app.on_callback_query(filters.regex("st_back"))
 @error
 async def start_lol(_, c : CallbackQuery):
@@ -138,18 +138,27 @@ async def start_lol(_, c : CallbackQuery):
         f"Add me to your group and make me admin to unlock all features!"
     )
 
-    await c.message.edit(
-        text=txt,
-        reply_markup=get_main_menu_buttons(),
-        invert_media = True
-    )
+    # Uses InputMediaPhoto to restore the Start Image
+    try:
+        await c.message.edit_media(
+            media=InputMediaPhoto(config.START_IMG_URL, caption=txt),
+            reply_markup=get_main_menu_buttons()
+        )
+    except Exception:
+        # Fallback if the message wasn't a photo before
+        await c.message.delete()
+        await c.message.reply_photo(
+            photo=config.START_IMG_URL,
+            caption=txt,
+            reply_markup=get_main_menu_buttons()
+        )
 
-# Callback for the "About" button (NEW ADDITION)
+# Callback for the "About" button
 @app.on_callback_query(filters.regex("yumeko_about"))
 @error
 async def about_section(_, clb: CallbackQuery):
-    await clb.message.edit(
-        text=(
+    await clb.message.edit_caption(
+        caption=(
             "**ℹ️ About Maria**\n\n"
             "Maria is a powerful group management bot built with Python and Pyrogram.\n"
             "We aim to make Telegram group management easy and fun!\n\n"
@@ -159,23 +168,21 @@ async def about_section(_, clb: CallbackQuery):
             [
                 InlineKeyboardButton("🔙 Back", callback_data="st_back")
             ]
-        ]),
-        disable_web_page_preview=True
+        ])
     )
 
 @app.on_callback_query(filters.regex("source_code"))
 @error
 async def source_code(_, clb: CallbackQuery):
-    await clb.message.edit(
-        text=(
+    await clb.message.edit_caption(
+        caption=(
             " ʏᴇ ᴛᴏ ᴋʜᴀᴀʟɪ ʜᴀɪ"
         ),
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("Bᴀᴄᴋ", callback_data="st_back")
             ]
-        ]),
-        disable_web_page_preview=True
+        ])
     )
 
 @app.on_message(filters.command("start" , config.COMMAND_PREFIXES) & filters.private)
@@ -183,13 +190,12 @@ async def source_code(_, clb: CallbackQuery):
 @save
 async def start_cmd(_, message : Message):
     
-    # Check for parameters passed with the start command
     if len(message.command) > 1 and message.command[1] == "help":
         await help_command(Client, message)
         return
     
+    # Animation
     await message.react("🍓" , big = True)
-    
     x = await message.reply_text(f"`Hie {message.from_user.first_name} <3`")
     await sleep(0.3)
     await x.edit_text("⚡️")
@@ -199,7 +205,6 @@ async def start_cmd(_, message : Message):
     await x.delete()
     
     await message.reply_cached_media(file_id = STICKER_FILE_ID)    
-    
     await sleep(0.2)
     
     user_mention = message.from_user.mention(style="md")
@@ -217,11 +222,11 @@ async def start_cmd(_, message : Message):
         f"Add me to your group and make me admin to unlock all features!"
     )
 
-    await message.reply(
-        text=txt,
-        reply_markup=get_main_menu_buttons(),
-        invert_media = True ,
-        message_effect_id= 5046509860389126442
+    # SENDING PHOTO using config.START_IMG_URL
+    await message.reply_photo(
+        photo=config.START_IMG_URL,
+        caption=txt,
+        reply_markup=get_main_menu_buttons()
     )
 
 
@@ -230,27 +235,33 @@ async def start_cmd(_, message : Message):
 @save
 async def help_command(client, message: Message):
     prefixes = " ".join(config.COMMAND_PREFIXES)
-    await message.reply(
-        text=f"**[❖]({config.HELP_IMG_URL})!**\n"
+    
+    # SENDING PHOTO using config.HELP_IMG_URL
+    await message.reply_photo(
+        photo=config.HELP_IMG_URL,
+        caption=f"**[❖] Help Menu!**\n"
              "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
              f"🔹 **ᴀᴠᴀɪʟᴀʙʟᴇ ᴘʀᴇғɪxᴇs:** {prefixes} \n\n"
              f" **ғᴏᴜɴᴅ ᴀ ʙᴜɢ? ?**\n"
              "ʀᴇᴘᴏʀᴛ ɪᴛ ᴜsɪɴɢ ᴛʜᴇ /bug ᴄᴏᴍᴍᴀɴᴅ.",
-        reply_markup=get_paginated_buttons(),
-        invert_media = True
+        reply_markup=get_paginated_buttons()
     )
 
 @app.on_callback_query(filters.regex(r"^yumeko_help$"))
 async def show_help_menu(client, query: CallbackQuery):
     prefixes = " ".join(config.COMMAND_PREFIXES)
-    await query.message.edit(
-        text=f"**[❖]({config.HELP_IMG_URL})!**\n"
+    
+    # Switches to HELP Image
+    await query.message.edit_media(
+        media=InputMediaPhoto(
+            config.HELP_IMG_URL,
+            caption=f"**[❖] Help Menu!**\n"
              "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
              f"🔹 **ᴀᴠᴀɪʟᴀʙʟᴇ ᴘʀᴇғɪxᴇs:** {prefixes} \n\n"
              f" **ғᴏᴜɴᴅ ᴀ ʙᴜɢ? ?**\n"
-             "ʀᴇᴘᴏʀᴛ ɪᴛ ᴜsɪɴɢ ᴛʜᴇ /bug ᴄᴏᴍᴍᴀɴᴅ.",
-        reply_markup=get_paginated_buttons(),
-        invert_media=True
+             "ʀᴇᴘᴏʀᴛ ɪᴛ ᴜsɪɴɢ ᴛʜᴇ /bug ᴄᴏᴍᴍᴀɴᴅ."
+        ),
+        reply_markup=get_paginated_buttons()
     )
 
 # Callback query handler for module help
@@ -258,20 +269,17 @@ async def show_help_menu(client, query: CallbackQuery):
 async def handle_help_callback(client, query: CallbackQuery):
     data = query.data
     try:
-        # Extract the numeric index and page from the callback data
         parts = data.split("_")
         module_index = int(parts[1])
         current_page = int(parts[2])
 
         modules = sorted(LOADED_MODULES.keys())
-
-        # Retrieve the module name using the index
         module_name = modules[module_index]
         help_text = LOADED_MODULES.get(module_name, "No help available for this module.")
 
-        # Edit the message to display the help text
-        await query.message.edit(
-            text=f"{help_text}",
+        # Just edit caption here to keep it fast
+        await query.message.edit_caption(
+            caption=f"{help_text}",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("Back", callback_data=f"area_{current_page}")]
             ])
@@ -287,15 +295,13 @@ async def handle_pagination_callback(client, query: CallbackQuery):
         page = int(data[5:])
         prefixes = " ".join(config.COMMAND_PREFIXES)
 
-        # Edit both the message text and reply markup
-        await query.message.edit(
-        text=f"**[❖]({config.HELP_IMG_URL})!**\n"
+        await query.message.edit_caption(
+            caption=f"**[❖] Help Menu!**\n"
              "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
              f"🔹 **ᴀᴠᴀɪʟᴀʙʟᴇ ᴘʀᴇғɪxᴇs:** {prefixes} \n\n"
              f" **ғᴏᴜɴᴅ ᴀ ʙᴜɢ? ?**\n"
              "ʀᴇᴘᴏʀᴛ ɪᴛ ᴜsɪɴɢ ᴛʜᴇ /bug ᴄᴏᴍᴍᴀɴᴅ.",
-            reply_markup=get_paginated_buttons(page),
-            invert_media=True
+            reply_markup=get_paginated_buttons(page)
         )
     except Exception as e:
         await query.answer("Error occurred while navigating pages. Please try again.")
@@ -305,23 +311,26 @@ async def handle_pagination_callback(client, query: CallbackQuery):
 async def handle_main_menu_callback(client, query: CallbackQuery):
     prefixes = " ".join(config.COMMAND_PREFIXES)
 
-    await query.message.edit(
-        text=f"**[❖]({config.HELP_IMG_URL})!**\n"
+    await query.message.edit_media(
+        media=InputMediaPhoto(
+            config.HELP_IMG_URL,
+            caption=f"**[❖] Help Menu!**\n"
              "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
              f"🔹 **ᴀᴠᴀɪʟᴀʙʟᴇ ᴘʀᴇғɪxᴇs:** {prefixes} \n\n"
              f" **ғᴏᴜɴᴅ ᴀ ʙᴜɢ? ?**\n"
-             "ʀᴇᴘᴏʀᴛ ɪᴛ ᴜsɪɴɢ ᴛʜᴇ /bug ᴄᴏᴍᴍᴀɴᴅ.",
-        reply_markup=get_paginated_buttons(),
-        invert_media=True
+             "ʀᴇᴘᴏʀᴛ ɪᴛ ᴜsɪɴɢ ᴛʜᴇ /bug ᴄᴏᴍᴍᴀɴᴅ."
+        ),
+        reply_markup=get_paginated_buttons()
     )
     
 @app.on_message(filters.command(["start" , "help"], prefixes=config.COMMAND_PREFIXES) & filters.group)
 async def start_command(client, message: Message):
     button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Sᴛᴀʀᴛ ɪɴ ᴘᴍ", url="https://t.me/VanitasXRobotstart=help")]
+        [InlineKeyboardButton("Sᴛᴀʀᴛ ɪɴ ᴘᴍ", url=f"https://t.me/{app.me.username}?start=help")]
     ])
-    await message.reply(
-        text=f"**𝖧𝖾𝗅𝗅𝗈, {message.from_user.first_name} <3**\n"
+    await message.reply_photo(
+        photo=config.START_IMG_URL,
+        caption=f"**𝖧𝖾𝗅𝗅𝗈, {message.from_user.first_name} <3**\n"
              f"𝖢𝗅𝗂𝖼𝗄 𝗍𝗁𝖾 𝖻𝗎𝗍𝗍𝗈𝗇 𝖻𝖾𝗅𝗈𝗐 𝗍𝗈 𝖾𝗑𝗉𝗅𝗈𝗋𝖾 𝗆𝗒 𝖿𝖾𝖺𝗍𝗎𝗋𝖾𝗌 𝖺𝗇𝖽 𝖼𝗈𝗆𝗆𝖺𝗇𝖽𝗌!",
         reply_markup=button
     )
