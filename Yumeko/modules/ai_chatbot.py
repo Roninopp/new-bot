@@ -17,8 +17,8 @@ logger = logging.getLogger("MariaAI")
 # --- CONFIGURATION ---
 GEMINI_KEY = getattr(config, "GEMINI_API_KEY", None)
 
-# ✅ FIX 1: Using Stable Model Version
-MODEL_NAME = "gemini-1.5-flash"
+# ✅ FIX: Switched to 'gemini-pro' (Universal compatibility)
+MODEL_NAME = "gemini-pro"
 
 # --- VOICE SETTINGS (NATURAL FEMALE VOICE) ---
 VOICE_MODEL = "hi-IN-SwaraNeural"
@@ -129,14 +129,12 @@ smart_filter = filters.create(is_targeted)
 
 # --- HANDLERS (USING @app) ---
 
-# ✅ FIX 2: group=-5 ensures this runs BEFORE other modules
 @app.on_message(filters.text & ~filters.bot & smart_filter, group=-5)
 @error
 @save
 async def ai_chat_handler(client, message):
     if not model: return
 
-    # ✅ FIX 3: Debug Log - Check your VPS terminal for this!
     logger.info(f"📨 AI received message: {message.text[:20]}...") 
 
     chat_id = message.chat.id
@@ -155,16 +153,15 @@ async def ai_chat_handler(client, message):
     if any(x in lower for x in ["voice", "bol", "audio", "suno"]): mode = "voice"
     elif any(x in lower for x in ["text", "chat", "likh", "msg"]): mode = "text"
 
-    # 1. Action
     action = enums.ChatAction.RECORD_AUDIO if mode == "voice" else enums.ChatAction.TYPING
     await client.send_chat_action(chat_id, action)
 
-    # 2. Memory Management
+    # Memory
     if chat_id not in chat_memory:
         chat_memory[chat_id] = [{"role": "user", "parts": [SYSTEM_PROMPT]}]
     chat_memory[chat_id].append({"role": "user", "parts": [user_text]})
 
-    # 3. Generate Response
+    # Generate
     try:
         if len(chat_memory[chat_id]) > 20:
             chat_memory[chat_id] = chat_memory[chat_id][-10:]
@@ -172,12 +169,12 @@ async def ai_chat_handler(client, message):
 
         if mode == "voice":
             voice_reminder = "\n[REMINDER: Keep sentences SHORT. This will be spoken aloud.]"
-            # Updated async method for pyrogram safety
+            # Using standard generate_content_async for broader compatibility
             response = await model.generate_content_async(
                 contents=[{"role": "user", "parts": [user_text + voice_reminder]}]
             )
         else:
-            # Updated async method
+            # Using start_chat for text history context
             chat = model.start_chat(history=chat_memory[chat_id][:-1])
             response = await chat.send_message_async(user_text)
             
@@ -186,7 +183,7 @@ async def ai_chat_handler(client, message):
         logger.error(f"Gemini Error: {e}")
         return
 
-    # 4. Process Response
+    # Process
     clean_text = re.sub(r'\|(HAPPY|SAD|ANGRY|SURPRISED|LOVE)\|', '', raw_text).strip()
     
     emoji = "😊"
@@ -198,7 +195,7 @@ async def ai_chat_handler(client, message):
 
     chat_memory[chat_id].append({"role": "model", "parts": [clean_text]})
 
-    # 5. Send Response
+    # Send
     try:
         if random.random() < 0.55:
             try: await message.react(emoji)
