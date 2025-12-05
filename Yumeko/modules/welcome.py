@@ -386,7 +386,7 @@ async def resetwlcm(_, m: Message):
     return
 
 
-@app.on_message(filters.group & filters.new_chat_members, group=69)
+@app.on_message((filters.group | filters.channel) & filters.new_chat_members, group=69)
 async def member_has_joined(c: Client, m: Message):
     users: List[User] = m.new_chat_members
     db = Greetings(m.chat.id)
@@ -523,7 +523,7 @@ async def member_has_joined(c: Client, m: Message):
                     pass
 
 
-@app.on_message(filters.group & filters.left_chat_member, group=99)
+@app.on_message((filters.group | filters.channel) & filters.left_chat_member, group=99)
 async def member_has_left(c: Client, m: Message):
     db = Greetings(m.chat.id)
     status = db.get_goodbye_status()
