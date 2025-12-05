@@ -729,13 +729,29 @@ Goodbye text:
     return
 
 
-__module__ = "𝖦𝗋𝖾𝖾𝗍𝗂𝗇𝗀𝗌 𝗏2"
+__module__ = "Greetings_v2"
 
-__help__ = """**𝖢𝗎𝗌𝗍𝗈𝗆𝗂𝗓𝖾 𝖶𝖾𝗅𝖼𝗈𝗆𝖾/𝖦𝗈𝗈𝖽𝖻𝗒𝖾 𝖬𝖾𝗌𝗌𝖺𝗀𝖾𝗌 (𝖵2):**
+__help__ = """**Customize Welcome/Goodbye Messages (V2):**
 
-✧ **Professional Welcome Cards**: Automatically generates beautiful welcome cards with user profile pictures!
+**Professional Welcome Cards**: Automatically generates beautiful welcome cards with user profile pictures!
 
-**𝖢𝗎𝗌𝗍𝗈𝗆𝗂𝗓𝖾 𝖬𝖾𝗌𝗌𝖺𝗀𝖾𝗌:**
-  ✧ `/𝗌𝖾𝗍𝗐𝖾𝗅𝖼𝗈𝗆𝖾 <𝗋𝖾𝗉𝗅𝗒>` **:** 𝖲𝖾𝗍𝗌 𝖼𝗎𝗌𝗍𝗈𝗆 𝗐𝖾𝗅𝖼𝗈𝗆𝖾 (disables welcome card)
-  ✧ `/𝗌𝖾𝗍𝗀𝗈𝗈𝖽𝖻𝗒𝖾 <𝗋𝖾𝗉𝗅𝗒>` **:** 𝖲𝖾𝗍𝗌 𝖼𝗎𝗌𝗍𝗈𝗆 𝗀𝗈𝗈𝖽𝖻𝗒𝖾
-  ✧ `/𝗋𝖾𝗌𝖾𝗍𝗐𝖾𝗅𝖼𝗈𝗆𝖾` **:** 𝖱𝖾
+**Customize Messages:**
+  /setwelcome <reply> - Sets custom welcome (disables welcome card)
+  /setgoodbye <reply> - Sets custom goodbye
+  /resetwelcome - Resets to default (enables welcome card)
+  /resetgoodbye - Resets to default goodbye
+
+**Enable/Disable:**
+  /welcome <on/off> - Enable/disable welcome
+  /goodbye <on/off> - Enable/disable goodbye
+
+**Clean Messages:**
+  /cleanwelcome <on/off> - Auto-delete previous welcome
+  /cleangoodbye <on/off> - Auto-delete previous goodbye
+
+**Notes:**
+  - Works in both public and private groups!
+  - Automatically generates welcome cards with profile pictures
+  - Using /setwelcome switches to custom message mode
+  - Yumeko must be an admin to greet users
+"""
