@@ -4,16 +4,16 @@ import base64
 import httpx
 from PIL import Image
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, MessageEntity
+from pyrogram.types import Message
 from Yumeko import app
 from config import config
 from Yumeko.decorator.errors import error
 from Yumeko.decorator.save import save
 
-# --- QUOTLY API CONFIG ---
+# API Endpoint
 QUOTLY_API = "https://bot.lyo.su/quote/generate"
 
-# Entity Mapping (Pyrogram -> API)
+# Map Pyrogram Entities to API Entities
 ENTITY_MAP = {
     enums.MessageEntityType.BOLD: "bold",
     enums.MessageEntityType.ITALIC: "italic",
@@ -28,13 +28,13 @@ ENTITY_MAP = {
 }
 
 async def get_pfp_base64(client: Client, user_id: int):
-    """Downloads PFP, Resizes it to 100x100 (Fixes API Error), and returns Base64"""
+    """Downloads PFP, Resizes to 100x100, and returns Base64"""
     try:
         photo = await client.download_media(user_id, file_name=f"pfp_{user_id}.jpg")
         if not photo: return None
 
         img = Image.open(photo)
-        img = img.resize((120, 120)) # Critical Fix: Resize for API speed
+        img = img.resize((100, 100)) # Small size for API stability
         
         buffer = io.BytesIO()
         img.save(buffer, format="PNG")
@@ -47,7 +47,6 @@ async def get_pfp_base64(client: Client, user_id: int):
         return None
 
 def parse_entities(message: Message):
-    """Converts Pyrogram Entities to Quotly API format"""
     api_entities = []
     if not message.entities:
         return api_entities
@@ -66,74 +65,81 @@ def parse_entities(message: Message):
 @error
 @save
 async def quotly_handler(client: Client, message: Message):
-    # 1. Check for Reply
     if not message.reply_to_message:
-        return await message.reply_text("ℹ️ **Reply to a text message to quote it.**")
+        return await message.reply_text("ℹ️ **Reply to a text message.**")
 
-    reply = message.reply_to_message
+    status_msg = await message.reply_text("🎨 **Making Quote...**")
     
-    # 2. Status
-    msg = await message.reply_text("🎨 **Making Quote...**")
-
-    # 3. Get Content
+    reply = message.reply_to_message
+    user = reply.from_user
+    
+    # Text Content
     text = reply.text or reply.caption or ""
     if not text:
-        return await msg.edit("❌ **I can only quote text messages.**")
+        return await status_msg.edit("❌ **No text found to quote.**")
 
-    # 4. Prepare Data
-    user = reply.from_user
+    # Get PFP
     pfp_data = await get_pfp_base64(client, user.photo.big_file_id if user.photo else None)
-    entities = parse_entities(reply)
+    
+    # Build User Name
+    first = user.first_name or "Unknown"
+    last = user.last_name or ""
+    full_name = f"{first} {last}".strip()
 
-    # 5. Build JSON Payload
+    # Build Message Object
+    msg_data = {
+        "entities": parse_entities(reply),
+        "avatar": True,
+        "from": {
+            "id": user.id,
+            "name": full_name,
+            "username": user.username or "",
+            "photo": {
+                "url": pfp_data 
+            }
+        },
+        "text": text,
+        "replyMessage": {} # We keep this empty or handle nested replies later
+    }
+
+    # Build Final JSON
     payload = {
         "type": "quote",
         "format": "webp",
         "backgroundColor": "#1b1429",
-        "messages": [
-            {
-                "entities": entities, # Now supports Bold/Italic etc.
-                "avatar": True,
-                "from": {
-                    "id": user.id,
-                    "name": f"{user.first_name} {user.last_name or ''}".strip(),
-                    "username": user.username or "",
-                    "photo": {
-                        "url": pfp_data 
-                    }
-                },
-                "text": text,
-                "replyMessage": {} # (Can be expanded for replies later)
-            }
-        ]
+        "messages": [msg_data]
     }
 
-    # 6. Send to API
     try:
         async with httpx.AsyncClient(timeout=30) as http_client:
             response = await http_client.post(QUOTLY_API, json=payload)
             
+            # DEBUGGING: If it fails, show WHY it failed
             if response.status_code != 200:
-                return await msg.edit("❌ **API Error.** The server is busy.")
+                return await status_msg.edit(f"❌ **API Error:** {response.status_code}")
             
-            # Check content type (JSON = Error, WebP = Success)
+            # If the API returned JSON (Error), print the error message
             if "application/json" in response.headers.get("content-type", ""):
-                return await msg.edit("❌ **Failed to render.**")
+                try:
+                    err_json = response.json()
+                    err_msg = err_json.get('message', 'Unknown API Error')
+                    return await status_msg.edit(f"❌ **Render Failed:** {err_msg}")
+                except:
+                    return await status_msg.edit("❌ **Failed to render (Unknown JSON).**")
 
-            # 7. Convert & Send
+            # Success
             sticker_io = io.BytesIO(response.read())
             sticker_io.name = "sticker.webp"
             
             await message.reply_sticker(sticker_io)
-            await msg.delete()
+            await status_msg.delete()
             
     except Exception as e:
-        await msg.edit(f"❌ **Error:** {e}")
+        await status_msg.edit(f"❌ **Error:** {e}")
 
 __module__ = "Quotly"
 __help__ = """
 **🎨 Quotly Sticker**
 
 /q - Reply to a message to make it a sticker.
-Supports Bold, Italic, and Links!
 """
