@@ -1,5 +1,5 @@
 from pyrogram import Client, filters
-from pyrogram.types import Message
+from pyrogram.types import Message, InputMediaPhoto
 from Yumeko import app
 import config
 from pyrogram.enums import MessageEntityType
@@ -8,7 +8,6 @@ from Yumeko.database.common_chat_db import get_common_chat_count
 from Yumeko.database.afk_db import is_user_afk
 from Yumeko.database.global_actions_db import is_user_gbanned , is_user_gmuted
 from Yumeko.database.user_info_db import get_user_infoo
-from pyrogram.types import InputMediaPhoto
 
 @app.on_message(filters.command("id", prefixes=config.config.COMMAND_PREFIXES))
 @error
@@ -71,32 +70,47 @@ async def get_user_info(client: Client, message: Message):
         user = message.reply_to_message.from_user
     elif len(message.command) > 1:
         target = message.command[1]
-        if target.isdigit():
-            user = await client.get_users(int(target))
-        else:
-            user = await client.get_users(target)
+        try:
+            if target.isdigit():
+                user = await client.get_users(int(target))
+            else:
+                user = await client.get_users(target)
+        except Exception:
+            await message.reply_text("❌ User not found!")
+            return
     else:
         user = message.from_user
 
-    x = await message.reply_text("Fetching User Info.")
+    x = await message.reply_text("Fetching User Info...")
 
     # Get user info
     user_id = user.id
     first_name = user.first_name or "N/A"
     last_name = user.last_name or "N/A"
-    username = f"@{user.username}" or "N/A"
-    mention = user.mention or "N/A"
+    username = f"@{user.username}" if user.username else "N/A"
+    mention = user.mention
     dc_id = user.dc_id or "N/A"
+
+    # --- FIX: Define Photo Variables ---
+    photo_count = 0
+    user_photo = None
+    
+    try:
+        # Get Photo Count
+        photo_count = await client.get_chat_photos_count(user_id)
+        # Get the first photo ID if count > 0
+        if photo_count > 0:
+            async for photo in client.get_chat_photos(user_id, limit=1):
+                user_photo = photo.file_id
+    except Exception:
+        pass # Privacy settings might hide photos
 
     # Fetch full user info for bio
     try:
-        full_user = await app.get_chat(user.id)
+        full_user = await client.get_chat(user_id)
         bio = full_user.bio or "N/A"
     except Exception:
         bio = "N/A"
-
-    await x.edit_text("Fetching User Info...")
-
 
     # Fetch additional info from database
     user_info = await get_user_infoo(user_id)
@@ -116,8 +130,6 @@ async def get_user_info(client: Client, message: Message):
     filled_blocks = health // 10
     empty_blocks = 10 - filled_blocks
     health_bar = f"{'▰' * filled_blocks}{'▱' * empty_blocks}"
-
-    await x.edit_text("Fetching User Info.....")
    
     # Prepare caption
     caption = (
@@ -125,10 +137,10 @@ async def get_user_info(client: Client, message: Message):
         f"➢ **ID:** `{user_id}`\n"
         f"➢ **First Name:** `{first_name}`\n"
         f"➢ **Last Name:** `{last_name}`\n"
-        f"➢ **Username:** {username if username != 'N/A' else 'No Username'}\n"
+        f"➢ **Username:** {username}\n"
         f"➢ **Mention:** {mention}\n"
         f"➢ **DC ID:** `{dc_id}`\n"
-        f"➢ **Bio:** `{bio if bio != 'N/A' else 'No Bio Available'}`\n\n"
+        f"➢ **Bio:** `{bio}`\n\n"
         f"➢ **Custom Bio:** `{custom_bio}`\n"
         f"➢ **Custom Tag:** `{custom_title}`\n"
         f"➢ **Profile Photos:** `{photo_count} {'Photo' if photo_count == 1 else 'Photos'}`\n"
@@ -137,37 +149,34 @@ async def get_user_info(client: Client, message: Message):
     )
 
     # Additional statuses
-    caption += f"➢ **AFK Status:** `{'Currently Away From Keyboard !!' if await is_user_afk(user_id) else 'No'}`\n"
-    common_groups = await get_common_chat_count(user_id)
+    is_afk = await is_user_afk(user_id)
+    caption += f"➢ **AFK Status:** `{'Currently Away From Keyboard !!' if is_afk else 'No'}`\n"
+    
+    try:
+        common_groups = await get_common_chat_count(user_id)
+    except:
+        common_groups = 0
+        
     caption += f"➢ **Common Groups:** `{common_groups}`\n"
     caption += f"➢ **Globally Banned:** `{'Yes' if await is_user_gbanned(user_id) else 'No'}`\n"
     caption += f"➢ **Globally Muted:** `{'Yes' if await is_user_gmuted(user_id) else 'No'}`\n"
 
     # Send response
-    if user_photo:
-        await x.edit_media(InputMediaPhoto(
-            media=user_photo,
-            caption=caption
-        ))
-    else:
-        await x.edit_text(caption)
+    try:
+        if user_photo:
+            await x.edit_media(InputMediaPhoto(
+                media=user_photo,
+                caption=caption
+            ))
+        else:
+            await x.edit_text(caption)
+    except Exception as e:
+        await x.edit_text(f"{caption}\n\n⚠️ Error showing photo: {e}")
 
-
-
-
-
-__module__ = "𝖨𝖣"
-
-
-__help__ = """**𝖴𝗌𝖾𝗋 𝖢𝗈𝗆𝗆𝖺𝗇𝖽𝗌:**
-  ✧ `/𝗂𝖽`**:** 𝖣𝗂𝗌𝗉𝗅𝖺𝗒𝗌 𝗒𝗈𝗎𝗋 𝖼𝗁𝖺𝗍 𝖨𝖣 𝖺𝗇𝖽 𝗎𝗌𝖾𝗋 𝖨𝖣.
- 
-  ✧ `/𝗂𝖽 <𝗎𝗌𝖾𝗋𝗇𝖺𝗆𝖾>`**:** 𝖣𝗂𝗌𝗉𝗅𝖺𝗒𝗌 𝗍𝗁𝖾 𝖨𝖣 𝗈𝖿 𝗍𝗁𝖾 𝗌𝗉𝖾𝖼𝗂𝖿𝗂𝖾𝖽 𝗎𝗌𝖾𝗋 (𝖼𝖺𝗌𝖾-𝗂𝗇𝗌𝖾𝗇𝗌𝗂𝗍𝗂𝗏𝖾 𝗌𝖾𝖺𝗋𝖼𝗁) 𝖺𝗅𝗈𝗇𝗀 𝗐𝗂𝗍𝗁 𝗒𝗈𝗎𝗋 𝖼𝗁𝖺𝗍 𝖨𝖣 𝖺𝗇𝖽 𝗎𝗌𝖾𝗋 𝖨𝖣.
- 
-**𝖱𝖾𝗉𝗅𝗂𝖾𝖽 𝗍𝗈 𝖺 𝖬𝖾𝗌𝗌𝖺𝗀𝖾:**
-  ✧ 𝖨𝖿 𝗍𝗁𝖾 𝖼𝗈𝗆𝗆𝖺𝗇𝖽 𝗂𝗌 𝗋𝖾𝗉𝗅𝗂𝖾𝖽 𝗍𝗈 𝖺 𝗎𝗌𝖾𝗋’𝗌 𝗆𝖾𝗌𝗌𝖺𝗀𝖾, 𝗂𝗍 𝗌𝗁𝗈𝗐𝗌 𝗍𝗁𝖾 𝖨𝖣 𝗈𝖿 𝗍𝗁𝖾 𝗎𝗌𝖾𝗋 𝗐𝗁𝗈 𝗂𝗌𝗌𝗎𝖾𝖽 𝗍𝗁𝖾 𝖼𝗈𝗆𝗆𝖺𝗇𝖽, 𝗍𝗁𝖾 𝖨𝖣 𝗈𝖿 𝗍𝗁𝖾 𝗋𝖾𝗉𝗅𝗂𝖾𝖽-𝗍𝗈 𝗎𝗌𝖾𝗋, 𝖺𝗇𝖽 𝗍𝗁𝖾 𝖼𝗁𝖺𝗍 𝖨𝖣.
- 
-  ✧ 𝖨𝖿 𝗍𝗁𝖾 𝖼𝗈𝗆𝗆𝖺𝗇𝖽 𝗂𝗌 𝗋𝖾𝗉𝗅𝗂𝖾𝖽 𝗍𝗈 𝖺 𝖿𝗈𝗋𝗐𝖺𝗋𝖽𝖾𝖽 𝗆𝖾𝗌𝗌𝖺𝗀𝖾 𝖿𝗋𝗈𝗆 𝖺𝗇𝗈𝗍𝗁𝖾𝗋 𝖼𝗁𝖺𝗍, 𝗂𝗍 𝗌𝗁𝗈𝗐𝗌 𝗍𝗁𝖾 𝖨𝖣 𝗈𝖿 𝗍𝗁𝖾 𝗎𝗌𝖾𝗋 𝗐𝗁𝗈 𝗂𝗌𝗌𝗎𝖾𝖽 𝗍𝗁𝖾 𝖼𝗈𝗆𝗆𝖺𝗇𝖽 𝖺𝗇𝖽 𝗍𝗁𝖾 𝖨𝖣 𝗈𝖿 𝗍𝗁𝖾 𝖼𝗁𝖺𝗍 𝖿𝗋𝗈𝗆 𝗐𝗁𝗂𝖼𝗁 𝗍𝗁𝖾 𝗆𝖾𝗌𝗌𝖺𝗀𝖾 𝗐𝖺𝗌 𝖿𝗈𝗋𝗐𝖺𝗋𝖽𝖾𝖽.
- 
-𝖴𝗌𝖾 𝗍𝗁𝖾𝗌𝖾 𝖼𝗈𝗆𝗆𝖺𝗇𝖽𝗌 𝗍𝗈 𝗀𝖾𝗍 𝗎𝗌𝖾𝗋 𝖺𝗇𝖽 𝖼𝗁𝖺𝗍 𝖨𝖣𝗌 𝖿𝗈𝗋 𝗏𝖺𝗋𝗂𝗈𝗎𝗌 𝗉𝗎𝗋𝗉𝗈𝗌𝖾𝗌.
- """
+__module__ = "ID"
+__help__ = """
+**User Commands:**
+  ✧ `/id`: Displays your chat ID and user ID.
+  ✧ `/id [username]`: Displays ID of specific user.
+  ✧ `/info [username/reply]`: Fetches detailed info about a user.
+"""
