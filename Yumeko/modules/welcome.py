@@ -386,18 +386,27 @@ async def resetwlcm(_, m: Message):
     return
 
 
-@app.on_message(filters.new_chat_members, group=69)
+@app.on_message(filters.new_chat_members)
 async def member_has_joined(c: Client, m: Message):
     # Debug logging
-    print(f"[WELCOME DEBUG] New member event detected!")
+    print(f"[WELCOME DEBUG] ========== NEW MEMBER EVENT ==========")
     print(f"[WELCOME DEBUG] Chat ID: {m.chat.id}")
     print(f"[WELCOME DEBUG] Chat Type: {m.chat.type}")
     print(f"[WELCOME DEBUG] Chat Title: {m.chat.title}")
+    print(f"[WELCOME DEBUG] Message from user: {m.from_user.first_name if m.from_user else 'None'}")
     
-    # Skip if not a group/supergroup/channel
-    if m.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL]:
-        print(f"[WELCOME DEBUG] Skipping - not a group (type: {m.chat.type})")
+    # Check if it's a private chat (skip)
+    if m.chat.type == ChatType.PRIVATE:
+        print(f"[WELCOME DEBUG] Skipping - private chat")
         return
+    
+    # Check bot permissions
+    try:
+        bot_member = await c.get_chat_member(m.chat.id, c.me.id)
+        print(f"[WELCOME DEBUG] Bot status in chat: {bot_member.status}")
+        print(f"[WELCOME DEBUG] Bot can send messages: {bot_member.privileges.can_post_messages if bot_member.privileges else 'N/A'}")
+    except Exception as e:
+        print(f"[WELCOME DEBUG] Error checking bot permissions: {e}")
     
     users: List[User] = m.new_chat_members
     db = Greetings(m.chat.id)
@@ -406,7 +415,7 @@ async def member_has_joined(c: Client, m: Message):
     
     for user in users:
         try:
-            print(f"[WELCOME DEBUG] Processing user: {user.first_name} (ID: {user.id})")
+            print(f"[WELCOME DEBUG] Processing user: {user.first_name} (ID: {user.id}, is_bot: {user.is_bot})")
             
             if user.id == c.me.id:
                 print(f"[WELCOME DEBUG] Skipping - it's me (bot)")
@@ -422,7 +431,7 @@ async def member_has_joined(c: Client, m: Message):
             continue
         
         status = db.get_welcome_status()
-        print(f"[WELCOME DEBUG] Welcome status: {status}")
+        print(f"[WELCOME DEBUG] Welcome status from DB: {status}")
         
         if not status:
             print(f"[WELCOME DEBUG] Welcome is disabled for this chat")
@@ -432,11 +441,12 @@ async def member_has_joined(c: Client, m: Message):
         UwU = db.get_welcome_media()
         mtype = db.get_welcome_msgtype()
         
+        print(f"[WELCOME DEBUG] DB values - text: {oo[:50] if oo else None}, media: {UwU}, mtype: {mtype}")
+        
         # Check if user has set custom welcome (not default)
         is_custom_welcome = (mtype is not None and mtype is not False) or (UwU is not None and UwU is not False)
         
-        print(f"[WELCOME DEBUG] Custom welcome: {is_custom_welcome}")
-        print(f"[WELCOME DEBUG] mtype: {mtype}, UwU: {UwU}")
+        print(f"[WELCOME DEBUG] Is custom welcome: {is_custom_welcome}")
         
         parse_words = [
             "first",
@@ -482,6 +492,7 @@ async def member_has_joined(c: Client, m: Message):
                     pass
             
             try:
+                print(f"[WELCOME DEBUG] Attempting to send custom message...")
                 if not UwU:
                     jj = await c.send_message(
                         m.chat.id,
@@ -499,36 +510,46 @@ async def member_has_joined(c: Client, m: Message):
 
                 if jj:
                     db.set_cleanwlcm_id(int(jj.id))
-                print(f"[WELCOME DEBUG] Custom welcome sent successfully!")
-            except ChannelPrivate:
-                print(f"[WELCOME DEBUG] ChannelPrivate error")
+                print(f"[WELCOME DEBUG] ✓ Custom welcome sent successfully!")
+            except ChannelPrivate as e:
+                print(f"[WELCOME DEBUG] ✗ ChannelPrivate error: {e}")
                 continue
             except RPCError as e:
-                print(f"[WELCOME DEBUG] RPCError: {e}")
+                print(f"[WELCOME DEBUG] ✗ RPCError: {e}")
+                continue
+            except Exception as e:
+                print(f"[WELCOME DEBUG] ✗ Unexpected error: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         else:
             # Use new welcome card system
             print(f"[WELCOME DEBUG] Using welcome card system")
             try:
                 # Download profile picture
+                print(f"[WELCOME DEBUG] Downloading profile picture...")
                 profile_pic_path = await download_profile_pic(user, c)
                 print(f"[WELCOME DEBUG] Profile pic path: {profile_pic_path}")
                 
                 # Create welcome card
+                print(f"[WELCOME DEBUG] Creating welcome card...")
                 chat_title = m.chat.title if m.chat.title else "this group"
                 welcome_card = await create_welcome_card(user, chat_title, member_count, profile_pic_path)
                 
                 if welcome_card:
+                    print(f"[WELCOME DEBUG] Welcome card created successfully")
                     # Delete previous welcome if clean welcome is on
                     ifff = db.get_current_cleanwelcome_id()
                     gg = db.get_current_cleanwelcome_settings()
                     if ifff and gg:
                         try:
                             await c.delete_messages(m.chat.id, int(ifff))
-                        except RPCError:
-                            pass
+                            print(f"[WELCOME DEBUG] Deleted previous welcome message")
+                        except RPCError as e:
+                            print(f"[WELCOME DEBUG] Could not delete previous message: {e}")
                     
                     # Send welcome card
+                    print(f"[WELCOME DEBUG] Attempting to send welcome card...")
                     caption = f"Welcome to {chat_title}, {user.mention}! 🎉"
                     jj = await c.send_photo(
                         m.chat.id,
@@ -538,7 +559,7 @@ async def member_has_joined(c: Client, m: Message):
                     
                     if jj:
                         db.set_cleanwlcm_id(int(jj.id))
-                    print(f"[WELCOME DEBUG] Welcome card sent successfully!")
+                    print(f"[WELCOME DEBUG] ✓ Welcome card sent successfully!")
                 else:
                     print(f"[WELCOME DEBUG] Welcome card generation failed, using fallback")
                     # Fallback to text if card generation fails
@@ -546,22 +567,25 @@ async def member_has_joined(c: Client, m: Message):
                     jj = await c.send_message(m.chat.id, text=teks)
                     if jj:
                         db.set_cleanwlcm_id(int(jj.id))
-                    print(f"[WELCOME DEBUG] Fallback text sent!")
+                    print(f"[WELCOME DEBUG] ✓ Fallback text sent!")
                         
-            except ChannelPrivate:
-                print(f"[WELCOME DEBUG] ChannelPrivate error in welcome card")
+            except ChannelPrivate as e:
+                print(f"[WELCOME DEBUG] ✗ ChannelPrivate error in welcome card: {e}")
                 continue
             except Exception as e:
-                print(f"[WELCOME DEBUG] Error in welcome card: {e}")
+                print(f"[WELCOME DEBUG] ✗ Error in welcome card: {e}")
                 import traceback
                 traceback.print_exc()
                 # Fallback to simple text
                 try:
+                    print(f"[WELCOME DEBUG] Trying final fallback...")
                     teks = f"Welcome {user.mention} to {m.chat.title}! 🎉"
                     await c.send_message(m.chat.id, text=teks)
-                    print(f"[WELCOME DEBUG] Final fallback sent!")
+                    print(f"[WELCOME DEBUG] ✓ Final fallback sent!")
                 except Exception as e2:
-                    print(f"[WELCOME DEBUG] Final fallback also failed: {e2}")
+                    print(f"[WELCOME DEBUG] ✗ Final fallback also failed: {e2}")
+    
+    print(f"[WELCOME DEBUG] ========== END OF WELCOME HANDLER ==========\n")
 
 
 @app.on_message(filters.left_chat_member, group=99)
