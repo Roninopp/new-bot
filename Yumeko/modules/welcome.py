@@ -404,7 +404,9 @@ async def member_has_joined(c: Client, m: Message):
     try:
         bot_member = await c.get_chat_member(m.chat.id, c.me.id)
         print(f"[WELCOME DEBUG] Bot status in chat: {bot_member.status}")
-        print(f"[WELCOME DEBUG] Bot can send messages: {bot_member.privileges.can_post_messages if bot_member.privileges else 'N/A'}")
+        if bot_member.status == "left" or bot_member.status == "kicked":
+            print(f"[WELCOME DEBUG] Bot is not in the chat!")
+            return
     except Exception as e:
         print(f"[WELCOME DEBUG] Error checking bot permissions: {e}")
     
@@ -417,12 +419,14 @@ async def member_has_joined(c: Client, m: Message):
         try:
             print(f"[WELCOME DEBUG] Processing user: {user.first_name} (ID: {user.id}, is_bot: {user.is_bot})")
             
+            # Only skip if it's the bot itself (by ID check)
             if user.id == c.me.id:
-                print(f"[WELCOME DEBUG] Skipping - it's me (bot)")
+                print(f"[WELCOME DEBUG] Skipping - it's me (bot with ID: {c.me.id})")
                 continue
-            if user.is_bot:
-                print(f"[WELCOME DEBUG] Skipping - user is a bot")
-                continue  # ignore bots
+            
+            # Don't skip other bots anymore - greet everyone!
+            print(f"[WELCOME DEBUG] Proceeding to greet user...")
+            
         except ChatAdminRequired:
             print(f"[WELCOME DEBUG] ChatAdminRequired error")
             continue
