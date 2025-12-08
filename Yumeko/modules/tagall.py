@@ -2,11 +2,23 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait
+from pyrogram.enums import ChatMemberStatus
 from Yumeko import app
 import config
 
 # Store active mention processes
 active_mentions = {}
+
+async def is_admin(client: Client, chat_id: int, user_id: int) -> bool:
+    """Check if user is admin or owner"""
+    try:
+        member = await client.get_chat_member(chat_id, user_id)
+        return member.status in [
+            ChatMemberStatus.OWNER,
+            ChatMemberStatus.ADMINISTRATOR
+        ]
+    except:
+        return False
 
 async def get_members(client: Client, chat_id: int, limit: int = 200):
     """Get list of members from a chat"""
@@ -25,13 +37,10 @@ async def mention_users(client: Client, message: Message, members: list, text: s
     mentioned_count = 0
     
     if mode == "normal":
-        # Normal mode: 5 users per message
         batch_size = 5
     elif mode == "fast":
-        # Fast mode: 10 users per message
         batch_size = 10
     elif mode == "single":
-        # Single mode: 1 user per message
         batch_size = 1
     else:
         batch_size = 5
@@ -66,9 +75,8 @@ async def tagall(client: Client, message: Message):
     """Tag all members in the group"""
     chat_id = message.chat.id
     
-    # Check if user is admin
-    member = await client.get_chat_member(chat_id, message.from_user.id)
-    if member.status not in ["administrator", "creator"]:
+    # Check if user is admin or owner
+    if not await is_admin(client, chat_id, message.from_user.id):
         await message.reply_text("**❌ Only admins can use this command!**")
         return
     
@@ -107,9 +115,7 @@ async def fastag(client: Client, message: Message):
     """Fast tag all members (10 per message)"""
     chat_id = message.chat.id
     
-    # Check if user is admin
-    member = await client.get_chat_member(chat_id, message.from_user.id)
-    if member.status not in ["administrator", "creator"]:
+    if not await is_admin(client, chat_id, message.from_user.id):
         await message.reply_text("**❌ Only admins can use this command!**")
         return
     
@@ -141,9 +147,7 @@ async def singletag(client: Client, message: Message):
     """Tag members one by one (slow but spam-safe)"""
     chat_id = message.chat.id
     
-    # Check if user is admin
-    member = await client.get_chat_member(chat_id, message.from_user.id)
-    if member.status not in ["administrator", "creator"]:
+    if not await is_admin(client, chat_id, message.from_user.id):
         await message.reply_text("**❌ Only admins can use this command!**")
         return
     
@@ -175,9 +179,7 @@ async def cancel_mention(client: Client, message: Message):
     """Cancel ongoing mention process"""
     chat_id = message.chat.id
     
-    # Check if user is admin
-    member = await client.get_chat_member(chat_id, message.from_user.id)
-    if member.status not in ["administrator", "creator"]:
+    if not await is_admin(client, chat_id, message.from_user.id):
         await message.reply_text("**❌ Only admins can use this command!**")
         return
     
@@ -192,9 +194,7 @@ async def admintag(client: Client, message: Message):
     """Tag only admins in the group"""
     chat_id = message.chat.id
     
-    # Check if user is admin
-    member = await client.get_chat_member(chat_id, message.from_user.id)
-    if member.status not in ["administrator", "creator"]:
+    if not await is_admin(client, chat_id, message.from_user.id):
         await message.reply_text("**❌ Only admins can use this command!**")
         return
     
@@ -205,7 +205,7 @@ async def admintag(client: Client, message: Message):
     # Get admins
     admins = []
     try:
-        async for admin in client.get_chat_members(chat_id, filter="administrators"):
+        async for admin in client.get_chat_members(chat_id, filter=filters.ChatMembersFilter.ADMINISTRATORS):
             if not admin.user.is_bot:
                 admins.append(admin.user)
     except Exception as e:
@@ -229,9 +229,7 @@ async def botstag(client: Client, message: Message):
     """Tag all bots in the group"""
     chat_id = message.chat.id
     
-    # Check if user is admin
-    member = await client.get_chat_member(chat_id, message.from_user.id)
-    if member.status not in ["administrator", "creator"]:
+    if not await is_admin(client, chat_id, message.from_user.id):
         await message.reply_text("**❌ Only admins can use this command!**")
         return
     
@@ -276,7 +274,7 @@ Tag/mention members in your group with various modes!
 
 **Features:**
 • Multiple tagging modes for different needs
-• Admin-only commands for safety
+• Admin + Owner access (both work!)
 • Flood protection built-in
 • Cancelable processes
 • Custom messages support
@@ -286,7 +284,7 @@ Tag/mention members in your group with various modes!
 `/fastag Everyone please vote!`
 `/admintag Need admin help here`
 
-**Note:** Only group admins can use these commands.
+**Note:** Only group admins and owners can use these commands.
 """
 
 __module__ = "Mention All"
