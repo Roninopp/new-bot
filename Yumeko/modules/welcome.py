@@ -388,6 +388,39 @@ async def resetwlcm(_, m: Message):
 
 @app.on_message(filters.new_chat_members)
 async def member_has_joined(c: Client, m: Message):
+    await handle_welcome(c, m)
+
+
+@app.on_chat_member_updated()
+async def member_joined_via_link(c: Client, update):
+    """Handle users joining via invite link"""
+    # Check if it's a new member joining
+    if (
+        not update.old_chat_member 
+        and update.new_chat_member 
+        and update.new_chat_member.status not in ["left", "kicked", "banned"]
+    ):
+        print(f"[WELCOME DEBUG] User joined via invite link!")
+        print(f"[WELCOME DEBUG] Chat ID: {update.chat.id}")
+        print(f"[WELCOME DEBUG] User: {update.new_chat_member.user.first_name}")
+        
+        # Skip if it's the bot itself
+        if update.new_chat_member.user.id == c.me.id:
+            print(f"[WELCOME DEBUG] Skipping - it's the bot itself")
+            return
+        
+        # Create a mock message object for the welcome handler
+        class MockMessage:
+            def __init__(self, chat, user, from_user):
+                self.chat = chat
+                self.new_chat_members = [user]
+                self.from_user = from_user
+        
+        mock_msg = MockMessage(update.chat, update.new_chat_member.user, update.from_user)
+        await handle_welcome(c, mock_msg)
+
+
+async def handle_welcome(c: Client, m: Message):
     # Debug logging
     print(f"[WELCOME DEBUG] ========== NEW MEMBER EVENT ==========")
     print(f"[WELCOME DEBUG] Chat ID: {m.chat.id}")
