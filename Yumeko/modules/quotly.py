@@ -229,6 +229,7 @@ async def msg_quotly_cmd(client: Client, message: Message):
         make_quotly = await pyrogram_to_quotly([target_message], is_reply=is_reply_mode)
         bio_sticker = BytesIO(make_quotly)
         bio_sticker.name = "quote.webp"
+        bio_sticker.seek(0) # Ensure stream is at the beginning
         
         await message.reply_sticker(bio_sticker)
         await ww.delete()
@@ -279,6 +280,7 @@ async def custom_quote_cmd(client: Client, message: Message):
         
         bio_sticker = BytesIO(make_quotly)
         bio_sticker.name = "quote.webp"
+        bio_sticker.seek(0) # Ensure stream is at the beginning
         
         await message.reply_sticker(bio_sticker)
         await ww.delete()
