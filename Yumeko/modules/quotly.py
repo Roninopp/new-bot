@@ -3,7 +3,7 @@ Plugin for creating quote stickers from messages using the external API.
 This version adds support for Telegram Premium status emojis.
 """
 import logging
-from io import BytesIO
+import os
 import aiohttp
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -12,7 +12,7 @@ import config
 
 logger = logging.getLogger(__name__)
 
-# --- API Client Setup (using aiohttp) ---
+# --- API Client Setup ---
 API_HEADERS = {
     "Accept-Language": "en-US",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
@@ -209,23 +209,28 @@ async def msg_quotly_cmd(client: Client, message: Message):
     is_reply_mode = len(message.command) > 1 and message.command[1].lower() == 'r'
     
     target_message = ModifiedMessage(message.reply_to_message)
+    file_name = f"sticker_{message.id}.webp"
 
     try:
         make_quotly = await pyrogram_to_quotly([target_message], is_reply=is_reply_mode)
-        bio_sticker = BytesIO(make_quotly)
-        bio_sticker.name = "sticker.webp" # Change to sticker.webp
-        bio_sticker.seek(0)
         
-        # Use client.send_sticker explicitly to avoid fallback to document
+        # Save to disk to ensure it's treated as a file by the OS
+        with open(file_name, "wb") as f:
+            f.write(make_quotly)
+        
         await client.send_sticker(
             chat_id=message.chat.id, 
-            sticker=bio_sticker, 
+            sticker=file_name, 
             reply_to_message_id=message.id
         )
         await ww.delete()
     except Exception as e:
         logger.error(f"Failed to create quote sticker: {e}")
         await ww.edit(f"**❌ Error:** `{e}`")
+    finally:
+        # Cleanup the file
+        if os.path.exists(file_name):
+            os.remove(file_name)
 
 # --- Command Handler for /qt {custom_text} ---
 @app.on_message(filters.command("qt", prefixes=config.config.COMMAND_PREFIXES))
@@ -260,24 +265,28 @@ async def custom_quote_cmd(client: Client, message: Message):
         custom_text = full_text_input
 
     modified_message = ModifiedMessage(message.reply_to_message, custom_text)
+    file_name = f"sticker_{message.id}.webp"
 
     try:
         make_quotly = await pyrogram_to_quotly([modified_message], is_reply=is_reply_mode)
         
-        bio_sticker = BytesIO(make_quotly)
-        bio_sticker.name = "sticker.webp" # Change to sticker.webp
-        bio_sticker.seek(0)
+        # Save to disk to ensure it's treated as a file by the OS
+        with open(file_name, "wb") as f:
+            f.write(make_quotly)
         
-        # Use client.send_sticker explicitly to avoid fallback to document
         await client.send_sticker(
             chat_id=message.chat.id, 
-            sticker=bio_sticker, 
+            sticker=file_name, 
             reply_to_message_id=message.id
         )
         await ww.delete()
     except Exception as e:
         logger.error(f"Failed to create custom quote sticker: {e}")
         await ww.edit(f"**❌ Error:** `{e}`")
+    finally:
+        # Cleanup the file
+        if os.path.exists(file_name):
+            os.remove(file_name)
 
 # --- Help Documentation ---
 __help__ = """
