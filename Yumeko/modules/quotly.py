@@ -1,7 +1,6 @@
-"""
-Advanced Quote Sticker Module with API support
-Creates beautiful quote stickers like @QuotLyBot
-Commands: /q, /q r, /qt, /qt -r
+ """
+Plugin for creating quote stickers from messages using the external API.
+This version adds support for Telegram Premium status emojis.
 """
 import logging
 from io import BytesIO
@@ -13,38 +12,31 @@ import config
 
 logger = logging.getLogger(__name__)
 
-# API Configuration
+# --- API Client Setup (using aiohttp) ---
 API_HEADERS = {
     "Accept-Language": "en-US",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
 }
 
 class QuotlyException(Exception):
-    """Custom exception for Quotly API errors"""
     pass
 
-# ==================== Helper Functions ====================
+# --- Helper Functions (Slightly modified to be simpler) ---
 
 async def get_message_sender_id(ctx: Message):
-    """Get the sender's ID from various message types"""
     if ctx.forward_date:
-        if ctx.forward_sender_name:
-            return 1
-        elif ctx.forward_from:
-            return ctx.forward_from.id
-        elif ctx.forward_from_chat:
-            return ctx.forward_from_chat.id
-        else:
-            return 1
-    elif ctx.from_user:
-        return ctx.from_user.id
-    elif ctx.sender_chat:
-        return ctx.sender_chat.id
-    else:
-        return 1
+        if ctx.forward_sender_name: return 1
+        elif ctx.forward_from: return ctx.forward_from.id
+        elif ctx.forward_from_chat: return ctx.forward_from_chat.id
+        else: return 1
+    elif ctx.from_user: return ctx.from_user.id
+    elif ctx.sender_chat: return ctx.sender_chat.id
+    else: return 1
 
 async def get_message_sender_name(ctx: Message):
-    """Get the sender's display name"""
+    """
+    Gets the sender's name. The emoji is now handled by the API payload.
+    """
     if ctx.forward_date:
         if ctx.forward_sender_name:
             return ctx.forward_sender_name
@@ -69,7 +61,6 @@ async def get_message_sender_name(ctx: Message):
         return "Anonymous"
 
 async def get_message_sender_username(ctx: Message):
-    """Get the sender's username"""
     if ctx.forward_date:
         if (
             not ctx.forward_sender_name
@@ -101,7 +92,6 @@ async def get_message_sender_username(ctx: Message):
         return ctx.sender_chat.username
 
 async def get_message_sender_photo(ctx: Message):
-    """Get the sender's profile photo"""
     if ctx.forward_date:
         if (
             not ctx.forward_sender_name
@@ -109,7 +99,7 @@ async def get_message_sender_photo(ctx: Message):
             and ctx.forward_from_chat
             and ctx.forward_from_chat.photo
         ):
-            return {"big_file_id": ctx.forward_from_chat.photo.big_file_id}
+            return { "big_file_id": ctx.forward_from_chat.photo.big_file_id }
         elif (
             not ctx.forward_sender_name
             and not ctx.forward_from
@@ -120,12 +110,10 @@ async def get_message_sender_photo(ctx: Message):
             return None
         else:
             return (
-                {"big_file_id": ctx.forward_from.photo.big_file_id}
-                if ctx.forward_from.photo
-                else None
+                { "big_file_id": ctx.forward_from.photo.big_file_id } if ctx.forward_from.photo else None
             )
     elif ctx.from_user and ctx.from_user.photo:
-        return {"big_file_id": ctx.from_user.photo.big_file_id}
+        return { "big_file_id": ctx.from_user.photo.big_file_id }
     elif (
         ctx.from_user
         or ctx.sender_chat
@@ -134,10 +122,9 @@ async def get_message_sender_photo(ctx: Message):
     ):
         return None
     else:
-        return {"big_file_id": ctx.sender_chat.photo.big_file_id}
+        return { "big_file_id": ctx.sender_chat.photo.big_file_id }
 
 async def get_text_or_caption(ctx: Message):
-    """Get text or caption from message"""
     if ctx.text:
         return ctx.text
     elif ctx.caption:
@@ -145,45 +132,29 @@ async def get_text_or_caption(ctx: Message):
     else:
         return ""
 
-# ==================== API Functions ====================
-
+# --- API Payload Builder (MODIFIED) ---
 async def pyrogram_to_quotly(messages, is_reply):
-    """Convert Pyrogram messages to Quotly API format"""
     if not isinstance(messages, list):
         messages = [messages]
     
-    payload = {
-        "type": "quote",
-        "format": "webp",
-        "backgroundColor": "#1b1429",
-        "messages": []
-    }
+    payload = {"type": "quote", "format": "webp", "backgroundColor": "#1b1429", "messages": []}
 
     for message in messages:
         message_payload = {
-            "entities": [],
-            "avatar": True,
-            "from": {},
-            "text": await get_text_or_caption(message),
-            "replyMessage": {}
+            "entities": [], "avatar": True, "from": {}, "text": await get_text_or_caption(message), "replyMessage": {}
         }
-        
-        # Handle text entities (bold, italic, etc.)
         entities = message.entities or message.caption_entities
         if entities:
             for entity in entities:
-                message_payload["entities"].append({
-                    "type": entity.type.name.lower(),
-                    "offset": entity.offset,
-                    "length": entity.length
-                })
+                message_payload["entities"].append({"type": entity.type.name.lower(), "offset": entity.offset, "length": entity.length})
         
-        # Get sender info
+        # --- START OF PREMIUM EMOJI FIX ---
+        
+        # Determine the correct "sender" (either a user or a channel)
         sender = message.from_user or message.sender_chat
         
-        # Handle premium emoji status
         emoji_status_document_id = None
-        if sender and hasattr(sender, 'emoji_status') and sender.emoji_status:
+        if sender and sender.emoji_status:
             emoji_status_document_id = sender.emoji_status.custom_emoji_id
             
         message_payload["from"] = {
@@ -192,55 +163,40 @@ async def pyrogram_to_quotly(messages, is_reply):
             "username": await get_message_sender_username(message),
             "type": message.chat.type.name.lower(),
             "photo": await get_message_sender_photo(message),
-            "emojiStatus": (
-                {"document_id": emoji_status_document_id}
-                if emoji_status_document_id
-                else None
-            )
+            # --- THIS IS THE NEW FIELD ---
+            "emojiStatus": { "document_id": emoji_status_document_id } if emoji_status_document_id else None
         }
+        # --- END OF PREMIUM EMOJI FIX ---
         
-        # Handle reply message if needed
         if message.reply_to_message and is_reply:
+            # We also need to add the emoji for the replied-to user
             reply_sender = message.reply_to_message.from_user or message.reply_to_message.sender_chat
             reply_emoji_id = None
-            if reply_sender and hasattr(reply_sender, 'emoji_status') and reply_sender.emoji_status:
+            if reply_sender and reply_sender.emoji_status:
                 reply_emoji_id = reply_sender.emoji_status.custom_emoji_id
                 
             message_payload["replyMessage"] = {
                 "name": await get_message_sender_name(message.reply_to_message),
                 "text": await get_text_or_caption(message.reply_to_message),
                 "chatId": await get_message_sender_id(message.reply_to_message),
-                "emojiStatus": (
-                    {"document_id": reply_emoji_id}
-                    if reply_emoji_id
-                    else None
-                )
+                # --- THIS IS THE NEW FIELD FOR THE REPLY ---
+                "emojiStatus": { "document_id": reply_emoji_id } if reply_emoji_id else None
             }
         
         payload["messages"].append(message_payload)
     
-    # Make API request
-    try:
-        async with aiohttp.ClientSession(headers=API_HEADERS) as session:
-            async with session.post(
-                "https://bot.lyo.su/quote/generate",
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=20)
-            ) as response:
-                if response.status == 200:
-                    return await response.read()
-                else:
-                    error_text = await response.text()
-                    logger.error(f"Quotly API Error: {error_text}")
-                    raise QuotlyException(f"API returned status {response.status}")
-    except aiohttp.ClientError as e:
-        logger.error(f"Network error: {e}")
-        raise QuotlyException(f"Network error: {str(e)}")
+    async with aiohttp.ClientSession(headers=API_HEADERS) as session:
+        async with session.post("https://bot.lyo.su/quote/generate", json=payload, timeout=20) as r:
+            if r.status == 200:
+                return await r.read()  # Return the raw bytes of the sticker
+            else:
+                error_text = await r.text()
+                logger.error(f"Quotly API Error: {error_text}")
+                raise QuotlyException(error_text)
 
-# ==================== Modified Message Class ====================
-
+# --- This class is now used by BOTH commands (Unchanged) ---
 class ModifiedMessage(Message):
-    """Wrapper to modify message text while keeping other attributes"""
+    """A wrapper to ensure message objects are consistent."""
     def __init__(self, original_message, new_text=None):
         self.__dict__ = original_message.__dict__.copy()
         
@@ -252,142 +208,123 @@ class ModifiedMessage(Message):
         
         self.reply_to_message = original_message.reply_to_message
 
-# ==================== Command Handlers ====================
 
+# --- Command Handler for /q and /q r ---
 @app.on_message(filters.command("q", prefixes=config.config.COMMAND_PREFIXES))
-async def quote_command(client: Client, message: Message):
+async def msg_quotly_cmd(client: Client, message: Message):
     """
-    Create a quote sticker from a message
-    
-    Usage:
-    /q - Reply to a message to quote it
-    /q r - Reply to a message and include its reply
+    /q: Reply to a message to create a quote sticker.
+    /q r: Reply to a message to create a quote sticker, including its reply.
     """
-    if not message.reply_to_message:
-        await message.reply_text("**❌ Reply to a message to quote it!**")
-        return
+    ww = await message.reply_text("**💬 Creating quote sticker...**")
 
-    processing = await message.reply_text("**🎨 Creating quote sticker...**")
-    
-    # Check if reply mode is enabled
+    if not message.reply_to_message:
+        return await ww.edit("**❌ Please reply to a message to quote it!**")
+
     is_reply_mode = len(message.command) > 1 and message.command[1].lower() == 'r'
     
     target_message = ModifiedMessage(message.reply_to_message)
 
     try:
-        # Generate quote using API
-        quote_data = await pyrogram_to_quotly([target_message], is_reply=is_reply_mode)
-        
-        # Send as sticker
-        bio_sticker = BytesIO(quote_data)
+        make_quotly = await pyrogram_to_quotly([target_message], is_reply=is_reply_mode)
+        bio_sticker = BytesIO(make_quotly)
         bio_sticker.name = "quote.webp"
         
         await message.reply_sticker(bio_sticker)
-        await processing.delete()
-        
-    except QuotlyException as e:
-        await processing.edit_text(f"**❌ API Error:**\n`{str(e)}`")
+        await ww.delete()
     except Exception as e:
-        logger.error(f"Quote generation failed: {e}")
-        await processing.edit_text(f"**❌ Error:**\n`{str(e)}`")
+        logger.error(f"Failed to create quote sticker: {e}")
+        await ww.edit(f"**❌ Error:** `{e}`")
 
+# --- Command Handler for /qt {custom_text} ---
 @app.on_message(filters.command("qt", prefixes=config.config.COMMAND_PREFIXES))
-async def custom_quote_command(client: Client, message: Message):
+async def custom_quote_cmd(client: Client, message: Message):
     """
-    Create a quote sticker with custom text
-    
-    Usage:
-    /qt [text] - Reply to a message and add your own text
-    /qt -r [text] - Same as above but include the replied message's reply
+    /qt [text]: Reply to a message to create a quote sticker with your own custom text.
+    /qt -r [text]: Same as above, but also includes the replied-to_message's reply (like /q r).
     """
+    ww = await message.reply_text("**💬 Creating custom quote...**")
+
     if not message.reply_to_message:
-        await message.reply_text("**❌ Reply to a message to add custom text!**")
-        return
+        return await ww.edit("**❌ Please reply to a message to add custom text!**")
     
     if len(message.command) < 2:
-        await message.reply_text(
-            "**❌ Provide text to quote!**\n\n"
+        return await ww.edit(
+            "**❌ Please provide the text you want to quote!**\n\n"
             "**Examples:**\n"
             "• `/qt Hello there!`\n"
-            "• `/qt -r Hello there!` (includes reply)"
+            "• `/qt -r Hello there!`"
         )
-        return
 
-    processing = await message.reply_text("**🎨 Creating custom quote...**")
-    
-    # Get the text after the command
     full_text_input = message.text.split(None, 1)[1]
     
     is_reply_mode = False
     custom_text = ""
 
-    # Check for -r flag
     if full_text_input.lower().strip().startswith("-r"):
         is_reply_mode = True
         parts = full_text_input.split(None, 1)
         if len(parts) > 1:
             custom_text = parts[1]
         else:
-            await processing.edit_text("**❌ Provide text after the `-r` flag!**")
-            return
+            return await ww.edit("**❌ Please provide text *after* the `-r` flag!**")
     else:
+        is_reply_mode = False
         custom_text = full_text_input
 
-    # Create modified message with custom text
     modified_message = ModifiedMessage(message.reply_to_message, custom_text)
 
     try:
-        # Generate quote using API
-        quote_data = await pyrogram_to_quotly([modified_message], is_reply=is_reply_mode)
+        make_quotly = await pyrogram_to_quotly([modified_message], is_reply=is_reply_mode)
         
-        # Send as sticker
-        bio_sticker = BytesIO(quote_data)
+        bio_sticker = BytesIO(make_quotly)
         bio_sticker.name = "quote.webp"
         
         await message.reply_sticker(bio_sticker)
-        await processing.delete()
-        
-    except QuotlyException as e:
-        await processing.edit_text(f"**❌ API Error:**\n`{str(e)}`")
+        await ww.delete()
     except Exception as e:
-        logger.error(f"Custom quote generation failed: {e}")
-        await processing.edit_text(f"**❌ Error:**\n`{str(e)}`")
+        logger.error(f"Failed to create custom quote sticker: {e}")
+        await ww.edit(f"**❌ Error:** `{e}`")
 
-# ==================== Help Documentation ====================
-
+# --- Help Documentation ---
 __help__ = """
 **💬 Quote Sticker Module:**
 
-Create beautiful quote stickers like @QuotLyBot!
+Create beautiful quote stickers like @QuotLyBot using API!
 
 **Commands:**
 • `/q` - Reply to a message to quote it
 • `/q r` - Quote message with its reply included
-• `/qt [text]` - Quote with custom text
-• `/qt -r [text]` - Custom quote with reply
+• `/qt [text]` - Reply to a message and replace with custom text
+• `/qt -r [text]` - Custom text quote with reply included
 
 **Features:**
 • 🎨 Beautiful Telegram-style design
-• 👤 Shows profile pictures
-• 💎 Supports premium emoji status
-• ✨ Handles text formatting (bold, italic, etc.)
-• 🔗 Can include replied messages
-• 📝 Custom text replacement
+• 👤 Shows profile pictures clearly
+• 💎 Supports Telegram Premium emoji status
+• ✨ Handles all text formatting (bold, italic, code, etc.)
+• 🔗 Can include replied-to messages
+• 📝 Custom text replacement option
 
-**Examples:**
-1. Basic quote:
-   → Reply to message → `/q`
+**Usage Examples:**
 
-2. Quote with reply:
-   → Reply to message → `/q r`
+1. **Basic Quote:**
+   Reply to any message → `/q`
 
-3. Custom text:
-   → Reply to message → `/qt This is custom text!`
+2. **Quote with Reply:**
+   Reply to a message that has a reply → `/q r`
 
-4. Custom text with reply:
-   → Reply to message → `/qt -r Custom text here!`
+3. **Custom Text:**
+   Reply to message → `/qt This is my custom text!`
 
-**Note:** Uses external API for high-quality rendering!
+4. **Custom Text with Reply:**
+   Reply to message → `/qt -r Custom text here!`
+
+**Note:**
+• Works in groups and private chats
+• Uses external API for perfect rendering
+• Supports emojis, mentions, and all formatting
+• Profile pictures are fetched automatically
 """
 
 __module__ = "Quote"
