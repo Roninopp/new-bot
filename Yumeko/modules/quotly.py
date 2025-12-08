@@ -8,16 +8,17 @@ from pyrogram.types import Message
 from Yumeko import app
 import config
 
-# Color palette - vibrant colors
+# Vibrant accent colors (like QuotLy)
 COLORS = [
-    "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", 
-    "#98D8C8", "#F7DC6F", "#BB8FCE", "#85C1E2",
-    "#FF85B3", "#74C0FC", "#FFD93D", "#6BCB77"
+    "#FF6B9D", "#C44569", "#F8B500", "#38E54D", 
+    "#00D9FF", "#7F5AF0", "#FF5757", "#2EC4B6",
+    "#E85D75", "#FFA41B", "#5F27CD", "#00B894"
 ]
 
 def ensure_font():
     """Download a working font if not exists"""
     font_path = "resources/DejaVuSans.ttf"
+    bold_path = "resources/DejaVuSans-Bold.ttf"
     
     if not os.path.isdir("resources"):
         os.mkdir("resources", 0o755)
@@ -28,20 +29,28 @@ def ensure_font():
             url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
             urllib.request.urlretrieve(url, font_path)
         except:
-            return None
+            pass
     
-    return font_path
+    if not os.path.exists(bold_path):
+        import urllib.request
+        try:
+            url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans-Bold.ttf"
+            urllib.request.urlretrieve(url, bold_path)
+        except:
+            pass
+    
+    return font_path, bold_path
 
 def create_quote_sticker(text: str, username: str, profile_pic=None):
-    """Create a Telegram-style quote sticker"""
+    """Create a QuotLy-style quote sticker"""
     
-    # Get font
-    font_path = ensure_font()
+    # Get fonts
+    font_path, bold_path = ensure_font()
     
     try:
         if font_path and os.path.exists(font_path):
-            name_font = ImageFont.truetype(font_path, 40)
-            text_font = ImageFont.truetype(font_path, 32)
+            name_font = ImageFont.truetype(bold_path if os.path.exists(bold_path) else font_path, 38)
+            text_font = ImageFont.truetype(font_path, 30)
         else:
             name_font = ImageFont.load_default()
             text_font = ImageFont.load_default()
@@ -49,8 +58,8 @@ def create_quote_sticker(text: str, username: str, profile_pic=None):
         name_font = ImageFont.load_default()
         text_font = ImageFont.load_default()
     
-    # Wrap text
-    max_width = 45
+    # Wrap text (shorter lines for better readability)
+    max_width = 40
     wrapped_lines = []
     for line in text.split('\n'):
         if len(line) > max_width:
@@ -58,129 +67,112 @@ def create_quote_sticker(text: str, username: str, profile_pic=None):
         else:
             wrapped_lines.append(line if line else " ")
     
-    # Calculate dimensions
-    padding = 30
-    line_height = 45
-    text_height = len(wrapped_lines) * line_height
-    img_width = 512  # Standard sticker width
-    img_height = min(text_height + 200, 512)  # Standard sticker height (max 512)
+    # Limit to reasonable number of lines
+    if len(wrapped_lines) > 12:
+        wrapped_lines = wrapped_lines[:12]
+        wrapped_lines[-1] = wrapped_lines[-1][:37] + "..."
     
-    # Choose random vibrant color
+    # Calculate dimensions
+    line_height = 42
+    top_padding = 30
+    text_start_y = 140
+    text_height = len(wrapped_lines) * line_height
+    
+    img_width = 512
+    img_height = min(text_start_y + text_height + 40, 512)
+    
+    # Choose random accent color
     accent_color = random.choice(COLORS)
     
-    # Create image with dark gradient background
-    img = Image.new('RGB', (img_width, img_height), color='#1a1a2e')
+    # Create image with DARK background (like QuotLy)
+    img = Image.new('RGBA', (img_width, img_height), (42, 43, 46, 255))
     draw = ImageDraw.Draw(img)
     
-    # Draw subtle gradient effect
-    for i in range(img_height):
-        shade = int(26 + (i / img_height) * 15)
-        draw.line([(0, i), (img_width, i)], fill=f'#{shade:02x}{shade:02x}{shade+10:02x}')
+    # Draw accent stripe on the left (vertical bar)
+    draw.rectangle([(0, 0), (5, img_height)], fill=accent_color)
     
-    # Draw colorful accent bar on left
-    draw.rectangle([(0, 0), (6, img_height)], fill=accent_color)
-    
-    # Profile section
-    profile_x = padding + 10
-    profile_y = padding
+    # Profile picture setup
     profile_size = 80
+    profile_x = 30
+    profile_y = 35
     
+    # Draw profile picture or placeholder
     if profile_pic:
         try:
-            # Resize and make circular
-            profile_pic = profile_pic.resize((profile_size, profile_size))
+            # Resize profile pic
+            profile_pic = profile_pic.resize((profile_size, profile_size), Image.Resampling.LANCZOS)
+            
+            # Create circular mask
             mask = Image.new('L', (profile_size, profile_size), 0)
             mask_draw = ImageDraw.Draw(mask)
             mask_draw.ellipse((0, 0, profile_size, profile_size), fill=255)
             
+            # Convert profile pic to RGBA
+            profile_pic = profile_pic.convert('RGBA')
+            
+            # Create output with transparency
             output = Image.new('RGBA', (profile_size, profile_size), (0, 0, 0, 0))
             output.paste(profile_pic, (0, 0))
             output.putalpha(mask)
             
-            # Add white border around profile pic
-            draw.ellipse(
-                [(profile_x - 3, profile_y - 3), 
-                 (profile_x + profile_size + 3, profile_y + profile_size + 3)],
-                outline='white', width=3
-            )
-            
+            # Paste on main image
             img.paste(output, (profile_x, profile_y), output)
-        except:
-            # Draw colored circle with white border
+        except Exception as e:
+            print(f"Profile pic error: {e}")
+            # Draw colored circle if error
             draw.ellipse(
-                [(profile_x - 3, profile_y - 3), 
-                 (profile_x + profile_size + 3, profile_y + profile_size + 3)],
-                outline='white', width=3
-            )
-            draw.ellipse(
-                [(profile_x, profile_y), 
-                 (profile_x + profile_size, profile_y + profile_size)],
+                [(profile_x, profile_y), (profile_x + profile_size, profile_y + profile_size)],
                 fill=accent_color
             )
-            # Draw first letter
-            letter = username[0].upper() if username else "U"
+            # First letter
+            letter = username[0].upper() if username else "?"
             try:
-                letter_bbox = draw.textbbox((0, 0), letter, font=name_font)
-                letter_width = letter_bbox[2] - letter_bbox[0]
-                letter_height = letter_bbox[3] - letter_bbox[1]
-                draw.text(
-                    (profile_x + (profile_size - letter_width) // 2,
-                     profile_y + (profile_size - letter_height) // 2 - 5),
-                    letter, fill='white', font=name_font
-                )
+                bbox = draw.textbbox((0, 0), letter, font=name_font)
+                w = bbox[2] - bbox[0]
+                h = bbox[3] - bbox[1]
+                draw.text((profile_x + (profile_size - w) // 2, profile_y + (profile_size - h) // 2 - 4),
+                         letter, fill='white', font=name_font)
             except:
                 draw.text((profile_x + 25, profile_y + 20), letter, fill='white', font=name_font)
     else:
-        # Draw colored circle with white border
+        # Draw colored circle with first letter
         draw.ellipse(
-            [(profile_x - 3, profile_y - 3), 
-             (profile_x + profile_size + 3, profile_y + profile_size + 3)],
-            outline='white', width=3
-        )
-        draw.ellipse(
-            [(profile_x, profile_y), 
-             (profile_x + profile_size, profile_y + profile_size)],
+            [(profile_x, profile_y), (profile_x + profile_size, profile_y + profile_size)],
             fill=accent_color
         )
-        letter = username[0].upper() if username else "U"
+        letter = username[0].upper() if username else "?"
         try:
-            letter_bbox = draw.textbbox((0, 0), letter, font=name_font)
-            letter_width = letter_bbox[2] - letter_bbox[0]
-            letter_height = letter_bbox[3] - letter_bbox[1]
-            draw.text(
-                (profile_x + (profile_size - letter_width) // 2,
-                 profile_y + (profile_size - letter_height) // 2 - 5),
-                letter, fill='white', font=name_font
-            )
+            bbox = draw.textbbox((0, 0), letter, font=name_font)
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+            draw.text((profile_x + (profile_size - w) // 2, profile_y + (profile_size - h) // 2 - 4),
+                     letter, fill='white', font=name_font)
         except:
             draw.text((profile_x + 25, profile_y + 20), letter, fill='white', font=name_font)
     
-    # Draw username with glow effect
+    # Draw username next to profile pic
     name_x = profile_x + profile_size + 20
-    name_y = profile_y + 25
+    name_y = profile_y + 27
     
-    # Add shadow for depth
-    draw.text((name_x + 2, name_y + 2), username, fill='#000000', font=name_font)
-    draw.text((name_x, name_y), username, fill=accent_color, font=name_font)
+    # Truncate long names
+    if len(username) > 20:
+        username = username[:17] + "..."
     
-    # Draw decorative line under username
-    line_y = profile_y + profile_size + 15
-    draw.line([(padding + 10, line_y), (img_width - padding - 10, line_y)], 
-              fill=accent_color, width=2)
+    draw.text((name_x, name_y), username, fill='white', font=name_font)
     
-    # Draw message text with better spacing
-    text_y = line_y + 25
+    # Draw message text (with good contrast on dark background)
+    text_x = 30
+    text_y = text_start_y
+    
     for line in wrapped_lines:
-        # Add subtle shadow
-        draw.text((padding + 12, text_y + 1), line, fill='#000000', font=text_font)
-        draw.text((padding + 10, text_y), line, fill='#FFFFFF', font=text_font)
+        draw.text((text_x, text_y), line, fill='white', font=text_font)
         text_y += line_height
     
     return img
 
 @app.on_message(filters.command("q", prefixes=config.config.COMMAND_PREFIXES))
 async def quote_command(client: Client, message: Message):
-    """Generate a beautiful quote sticker from replied message"""
+    """Generate a QuotLy-style quote sticker"""
     
     if not message.reply_to_message:
         await message.reply_text("**❌ Reply to a message to quote it!**")
@@ -204,19 +196,15 @@ async def quote_command(client: Client, message: Message):
         return
     
     # Limit text length
-    if len(text) > 400:
-        text = text[:397] + "..."
+    if len(text) > 500:
+        text = text[:497] + "..."
     
     username = user.first_name
     if user.last_name:
         username += f" {user.last_name}"
     
-    # Limit username length
-    if len(username) > 25:
-        username = username[:22] + "..."
-    
     # Processing message
-    processing_msg = await message.reply_text("**🎨 Creating quote sticker...**")
+    processing_msg = await message.reply_text("**🎨 Creating quote...**")
     
     output_path = None
     try:
@@ -227,18 +215,15 @@ async def quote_command(client: Client, message: Message):
             if photos:
                 pfp_file = await client.download_media(photos[0], in_memory=True)
                 profile_pic = Image.open(BytesIO(pfp_file.getvalue()))
-        except:
-            pass
+        except Exception as e:
+            print(f"Error fetching profile: {e}")
         
         # Generate quote sticker
         quote_img = create_quote_sticker(text, username, profile_pic)
         
-        # Convert to RGBA for transparency
-        quote_img = quote_img.convert('RGBA')
-        
-        # Save as WebP (sticker format)
+        # Save as WebP sticker
         output_path = f"quote_{message.id}.webp"
-        quote_img.save(output_path, "WebP", quality=95)
+        quote_img.save(output_path, "WebP", quality=95, method=6)
         
         # Send as sticker
         await message.reply_sticker(sticker=output_path)
@@ -247,7 +232,9 @@ async def quote_command(client: Client, message: Message):
         await processing_msg.delete()
         
     except Exception as e:
-        await processing_msg.edit_text(f"**❌ Error:** `{str(e)}`")
+        await processing_msg.edit_text(f"**❌ Error creating quote:**\n`{str(e)}`")
+        import traceback
+        print(traceback.format_exc())
     
     finally:
         # Cleanup file
@@ -260,23 +247,24 @@ async def quote_command(client: Client, message: Message):
 __help__ = """
 **📝 Quote Module:**
 
-Create beautiful quote stickers from messages!
+Create beautiful quote stickers like @QuotLyBot!
 
 **Commands:**
 • `/q` - Reply to any message to create a quote sticker
 
 **Features:**
-• Beautiful Telegram-style design
-• Colorful accent colors
-• Shows profile picture
+• Clean QuotLy-style design
+• Dark background with colorful accents
+• Shows profile picture clearly
+• Username displayed prominently
+• Perfect text visibility
 • Professional sticker format
-• Auto text wrapping
 
 **Usage:**
 Simply reply to any text message with `/q`
 
 **Example:**
-Reply to someone's message → `/q` → Get a beautiful quote sticker! 🎨
+Reply to someone's message → `/q` → Beautiful quote sticker! 🎨
 """
 
 __module__ = "Quote"
