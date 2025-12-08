@@ -3,7 +3,6 @@ Plugin for creating quote stickers from messages using the external API.
 This version adds support for Telegram Premium status emojis.
 """
 import logging
-import os
 import aiohttp
 from io import BytesIO
 from pyrogram import Client, filters
@@ -11,7 +10,7 @@ from pyrogram.types import Message
 from Yumeko import app
 import config
 
-# Try importing Pillow for image processing
+# Try importing Pillow
 try:
     from PIL import Image
     HAS_PIL = True
@@ -205,28 +204,30 @@ class ModifiedMessage(Message):
         
         self.reply_to_message = original_message.reply_to_message
 
-# --- Image Processor (The Fix) ---
+# --- Image Processor (FIXED) ---
 def resize_sticker(image_bytes: bytes) -> BytesIO:
     """
-    Forces the image to be a standard WebP sticker using Pillow.
-    This fixes issues where Telegram treats the file as a document.
+    Attempts to resize/format the image using Pillow.
+    Returns None if the image cannot be identified (avoids crash).
     """
     if not HAS_PIL:
-        # Fallback if PIL is not installed
-        return BytesIO(image_bytes)
+        return None
 
-    im = Image.open(BytesIO(image_bytes))
-    
-    if (im.width, im.height) != (512, 512):
-        # Resize logic to fit 512x512 box while keeping aspect ratio
-        size = (512, 512)
-        im.thumbnail(size, Image.Resampling.LANCZOS)
-    
-    output = BytesIO()
-    # Save as WebP to a new stream
-    im.save(output, format="WEBP")
-    output.seek(0)
-    return output
+    try:
+        im = Image.open(BytesIO(image_bytes))
+        
+        if (im.width, im.height) != (512, 512):
+            size = (512, 512)
+            im.thumbnail(size, Image.Resampling.LANCZOS)
+        
+        output = BytesIO()
+        im.save(output, format="WEBP")
+        output.seek(0)
+        return output
+    except Exception as e:
+        # If this fails, it means the API returned bad data or not an image
+        logger.error(f"Pillow could not identify image: {e}")
+        return None
 
 
 # --- Command Handler for /q and /q r ---
@@ -244,13 +245,28 @@ async def msg_quotly_cmd(client: Client, message: Message):
     try:
         raw_image = await pyrogram_to_quotly([target_message], is_reply=is_reply_mode)
         
-        # Process the image with Pillow to force valid sticker format
+        # 1. Try to process with Pillow (Best for Stickers)
         sticker_bio = resize_sticker(raw_image)
-        sticker_bio.name = "sticker.webp"
         
-        # Use reply_sticker which handles the stream correctly
-        await message.reply_sticker(sticker_bio, quote=False)
+        # 2. If Pillow worked, use that. If not, use raw bytes (Fallback)
+        if sticker_bio:
+            final_bio = sticker_bio
+            final_bio.name = "sticker.webp"
+        else:
+            # Pillow failed (likely the error you saw), but we try sending raw anyway
+            # just in case it's valid but Pillow is confused.
+            final_bio = BytesIO(raw_image)
+            final_bio.name = "sticker.webp"
+
+        # 3. Send using client.send_sticker to FORCE sticker type
+        # We explicitly set the file name to .webp in the BytesIO object above
+        await client.send_sticker(
+            chat_id=message.chat.id,
+            sticker=final_bio,
+            reply_to_message_id=message.reply_to_message.id
+        )
         await ww.delete()
+
     except Exception as e:
         logger.error(f"Failed to create quote sticker: {e}")
         await ww.edit(f"**❌ Error:** `{e}`")
@@ -292,13 +308,25 @@ async def custom_quote_cmd(client: Client, message: Message):
     try:
         raw_image = await pyrogram_to_quotly([modified_message], is_reply=is_reply_mode)
         
-        # Process the image with Pillow to force valid sticker format
+        # 1. Try to process with Pillow (Best for Stickers)
         sticker_bio = resize_sticker(raw_image)
-        sticker_bio.name = "sticker.webp"
         
-        # Use reply_sticker which handles the stream correctly
-        await message.reply_sticker(sticker_bio, quote=False)
+        # 2. If Pillow worked, use that. If not, use raw bytes (Fallback)
+        if sticker_bio:
+            final_bio = sticker_bio
+            final_bio.name = "sticker.webp"
+        else:
+            final_bio = BytesIO(raw_image)
+            final_bio.name = "sticker.webp"
+
+        # 3. Send using client.send_sticker
+        await client.send_sticker(
+            chat_id=message.chat.id,
+            sticker=final_bio,
+            reply_to_message_id=message.reply_to_message.id
+        )
         await ww.delete()
+
     except Exception as e:
         logger.error(f"Failed to create custom quote sticker: {e}")
         await ww.edit(f"**❌ Error:** `{e}`")
