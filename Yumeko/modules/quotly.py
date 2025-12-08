@@ -10,13 +10,6 @@ from pyrogram.types import Message
 from Yumeko import app
 import config
 
-# Try importing Pillow
-try:
-    from PIL import Image
-    HAS_PIL = True
-except ImportError:
-    HAS_PIL = False
-
 logger = logging.getLogger(__name__)
 
 # --- API Client Setup ---
@@ -183,7 +176,8 @@ async def pyrogram_to_quotly(messages, is_reply):
         payload["messages"].append(message_payload)
     
     async with aiohttp.ClientSession(headers=API_HEADERS) as session:
-        async with session.post("https://bot.lyo.su/quote/generate", json=payload, timeout=20) as r:
+        # --- OWNER SUGGESTION APPLIED HERE (Added .webp to URL) ---
+        async with session.post("https://bot.lyo.su/quote/generate.webp", json=payload, timeout=20) as r:
             if r.status == 200:
                 return await r.read()
             else:
@@ -204,39 +198,6 @@ class ModifiedMessage(Message):
         
         self.reply_to_message = original_message.reply_to_message
 
-# --- STRICT Image Processor (The Fix) ---
-def force_512_scale(image_bytes: bytes) -> BytesIO:
-    """
-    Strictly forces the image to be 512px on one side to satisfy Telegram Sticker requirements.
-    """
-    if not HAS_PIL:
-        # If no PIL, return bytes as is (risk of file format)
-        return BytesIO(image_bytes)
-
-    try:
-        im = Image.open(BytesIO(image_bytes))
-        
-        # Calculate new size maintaining aspect ratio
-        if (im.width, im.height) != (512, 512):
-            w, h = im.size
-            if w > h:
-                new_w = 512
-                new_h = int(h * (512 / w))
-            else:
-                new_h = 512
-                new_w = int(w * (512 / h))
-                
-            im = im.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        
-        output = BytesIO()
-        im.save(output, format="WEBP")
-        output.seek(0)
-        return output
-    except Exception as e:
-        logger.error(f"Pillow Processing Failed: {e}")
-        # Return original bytes if processing fails to avoid crash
-        return BytesIO(image_bytes)
-
 
 # --- Command Handler for /q and /q r ---
 @app.on_message(filters.command("q", prefixes=config.config.COMMAND_PREFIXES))
@@ -250,16 +211,18 @@ async def msg_quotly_cmd(client: Client, message: Message):
     target_message = ModifiedMessage(message.reply_to_message)
 
     try:
-        raw_image = await pyrogram_to_quotly([target_message], is_reply=is_reply_mode)
+        # Get image from API (with new URL)
+        sticker_bytes = await pyrogram_to_quotly([target_message], is_reply=is_reply_mode)
         
-        # Force 512px resize
-        sticker_bio = force_512_scale(raw_image)
-        sticker_bio.name = "sticker.webp"
-        
-        # Use client.send_sticker to FORCE sticker type
+        # Prepare the stream
+        bio = BytesIO(sticker_bytes)
+        bio.name = "sticker.webp" # Explicitly name it .webp
+        bio.seek(0)
+
+        # Send strictly as sticker
         await client.send_sticker(
             chat_id=message.chat.id,
-            sticker=sticker_bio,
+            sticker=bio,
             reply_to_message_id=message.reply_to_message.id
         )
         await ww.delete()
@@ -303,16 +266,18 @@ async def custom_quote_cmd(client: Client, message: Message):
     modified_message = ModifiedMessage(message.reply_to_message, custom_text)
 
     try:
-        raw_image = await pyrogram_to_quotly([modified_message], is_reply=is_reply_mode)
+        # Get image from API (with new URL)
+        sticker_bytes = await pyrogram_to_quotly([modified_message], is_reply=is_reply_mode)
         
-        # Force 512px resize
-        sticker_bio = force_512_scale(raw_image)
-        sticker_bio.name = "sticker.webp"
+        # Prepare the stream
+        bio = BytesIO(sticker_bytes)
+        bio.name = "sticker.webp"
+        bio.seek(0)
 
-        # Use client.send_sticker to FORCE sticker type
+        # Send strictly as sticker
         await client.send_sticker(
             chat_id=message.chat.id,
-            sticker=sticker_bio,
+            sticker=bio,
             reply_to_message_id=message.reply_to_message.id
         )
         await ww.delete()
