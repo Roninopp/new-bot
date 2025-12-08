@@ -16,7 +16,7 @@ LOVE = "https://i.pinimg.com/originals/e5/3a/7e/e53a7e5b7d1f9c5f3b8b3f7e5a3b7e5b
 SIGMA = "https://media.tenor.com/x8v1oNUOmg4AAAAd/gigachad-chad.gif"
 CRINGE = "https://media1.tenor.com/m/9HZ5RQVCwOUAAAAC/goofy-ahh.gif"
 
-@app.on_message(filters.command("horny", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("horny", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def horny(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
@@ -25,7 +25,7 @@ async def horny(client: Client, message: Message):
     HORNY = f"**🔥 {mention} is {mm}% Horny!**"
     await message.reply_animation(animation=HOT, caption=HORNY)
 
-@app.on_message(filters.command("gay", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("gay", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def gay(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
@@ -34,7 +34,7 @@ async def gay(client: Client, message: Message):
     GAY = f"**🏳️‍🌈 {mention} is {mm}% Gay!**"
     await message.reply_animation(animation=SMEXY, caption=GAY)
 
-@app.on_message(filters.command("lesbian", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("lesbian", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def lesbian(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
@@ -43,7 +43,7 @@ async def lesbian(client: Client, message: Message):
     FEK = f"**💜 {mention} is {mm}% Lesbian!**"
     await message.reply_animation(animation=LEZBIAN, caption=FEK)
 
-@app.on_message(filters.command("boobs", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("boobs", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def boobs(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
@@ -52,7 +52,7 @@ async def boobs(client: Client, message: Message):
     BOOBS = f"**🍒 {mention}'s Boobs Size is {mm}!**"
     await message.reply_animation(animation=BIGBALL, caption=BOOBS)
 
-@app.on_message(filters.command("cock", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("cock", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def cock(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
@@ -61,7 +61,7 @@ async def cock(client: Client, message: Message):
     COCK = f"**🍆 {mention}'s Cock Size is {mm}cm**"
     await message.reply_animation(animation=LANG, caption=COCK)
 
-@app.on_message(filters.command("cute", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("cute", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def cute(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
@@ -72,7 +72,7 @@ async def cute(client: Client, message: Message):
 
 # NEW FEATURES BELOW
 
-@app.on_message(filters.command("smart", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("smart", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def smart(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
@@ -81,7 +81,7 @@ async def smart(client: Client, message: Message):
     SMART_TEXT = f"**🧠 {mention} is {mm}% Smart!**"
     await message.reply_animation(animation=SMART, caption=SMART_TEXT)
 
-@app.on_message(filters.command("love", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("love", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def love(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
@@ -90,7 +90,7 @@ async def love(client: Client, message: Message):
     LOVE_TEXT = f"**💖 {mention} is {mm}% Lovely!**"
     await message.reply_animation(animation=LOVE, caption=LOVE_TEXT)
 
-@app.on_message(filters.command("sigma", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("sigma", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def sigma(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
@@ -99,7 +99,7 @@ async def sigma(client: Client, message: Message):
     SIGMA_TEXT = f"**😎 {mention} is {mm}% Sigma Male!**"
     await message.reply_animation(animation=SIGMA, caption=SIGMA_TEXT)
 
-@app.on_message(filters.command("cringe", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("cringe", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def cringe(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
@@ -108,7 +108,7 @@ async def cringe(client: Client, message: Message):
     CRINGE_TEXT = f"**🤡 {mention} is {mm}% Cringe!**"
     await message.reply_animation(animation=CRINGE, caption=CRINGE_TEXT)
 
-@app.on_message(filters.command("lucky", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("lucky", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def lucky(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
@@ -117,7 +117,7 @@ async def lucky(client: Client, message: Message):
     LUCKY_TEXT = f"**🍀 {mention} is {mm}% Lucky today!**"
     await message.reply_text(LUCKY_TEXT)
 
-@app.on_message(filters.command("ship", prefixes=config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("ship", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def ship(client: Client, message: Message):
     if not message.reply_to_message:
         await message.reply_text("**❌ Reply to someone to ship them!**")
