@@ -237,7 +237,7 @@ async def process_quote(msg_text, user, client: Client):
 
     return canvas
 
-@app.on_message(filters.command("q", prefixes=config.COMMAND_PREFIXES))
+@app.on_message(filters.command("q", prefixes=config.config.COMMAND_PREFIXES))
 async def quote_command(client: Client, message: Message):
     """Generate a quote sticker from replied message"""
     if not message.reply_to_message:
