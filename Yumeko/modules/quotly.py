@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # --- API Client Setup ---
 API_HEADERS = {
-    "Accept-Language": "en-US",
+    "Content-Type": "application/json",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
 }
 
@@ -204,30 +204,38 @@ class ModifiedMessage(Message):
         
         self.reply_to_message = original_message.reply_to_message
 
-# --- Image Processor (FIXED) ---
-def resize_sticker(image_bytes: bytes) -> BytesIO:
+# --- STRICT Image Processor (The Fix) ---
+def force_512_scale(image_bytes: bytes) -> BytesIO:
     """
-    Attempts to resize/format the image using Pillow.
-    Returns None if the image cannot be identified (avoids crash).
+    Strictly forces the image to be 512px on one side to satisfy Telegram Sticker requirements.
     """
     if not HAS_PIL:
-        return None
+        # If no PIL, return bytes as is (risk of file format)
+        return BytesIO(image_bytes)
 
     try:
         im = Image.open(BytesIO(image_bytes))
         
+        # Calculate new size maintaining aspect ratio
         if (im.width, im.height) != (512, 512):
-            size = (512, 512)
-            im.thumbnail(size, Image.Resampling.LANCZOS)
+            w, h = im.size
+            if w > h:
+                new_w = 512
+                new_h = int(h * (512 / w))
+            else:
+                new_h = 512
+                new_w = int(w * (512 / h))
+                
+            im = im.resize((new_w, new_h), Image.Resampling.LANCZOS)
         
         output = BytesIO()
         im.save(output, format="WEBP")
         output.seek(0)
         return output
     except Exception as e:
-        # If this fails, it means the API returned bad data or not an image
-        logger.error(f"Pillow could not identify image: {e}")
-        return None
+        logger.error(f"Pillow Processing Failed: {e}")
+        # Return original bytes if processing fails to avoid crash
+        return BytesIO(image_bytes)
 
 
 # --- Command Handler for /q and /q r ---
@@ -239,30 +247,19 @@ async def msg_quotly_cmd(client: Client, message: Message):
         return await ww.edit("**❌ Please reply to a message to quote it!**")
 
     is_reply_mode = len(message.command) > 1 and message.command[1].lower() == 'r'
-    
     target_message = ModifiedMessage(message.reply_to_message)
 
     try:
         raw_image = await pyrogram_to_quotly([target_message], is_reply=is_reply_mode)
         
-        # 1. Try to process with Pillow (Best for Stickers)
-        sticker_bio = resize_sticker(raw_image)
+        # Force 512px resize
+        sticker_bio = force_512_scale(raw_image)
+        sticker_bio.name = "sticker.webp"
         
-        # 2. If Pillow worked, use that. If not, use raw bytes (Fallback)
-        if sticker_bio:
-            final_bio = sticker_bio
-            final_bio.name = "sticker.webp"
-        else:
-            # Pillow failed (likely the error you saw), but we try sending raw anyway
-            # just in case it's valid but Pillow is confused.
-            final_bio = BytesIO(raw_image)
-            final_bio.name = "sticker.webp"
-
-        # 3. Send using client.send_sticker to FORCE sticker type
-        # We explicitly set the file name to .webp in the BytesIO object above
+        # Use client.send_sticker to FORCE sticker type
         await client.send_sticker(
             chat_id=message.chat.id,
-            sticker=final_bio,
+            sticker=sticker_bio,
             reply_to_message_id=message.reply_to_message.id
         )
         await ww.delete()
@@ -308,21 +305,14 @@ async def custom_quote_cmd(client: Client, message: Message):
     try:
         raw_image = await pyrogram_to_quotly([modified_message], is_reply=is_reply_mode)
         
-        # 1. Try to process with Pillow (Best for Stickers)
-        sticker_bio = resize_sticker(raw_image)
-        
-        # 2. If Pillow worked, use that. If not, use raw bytes (Fallback)
-        if sticker_bio:
-            final_bio = sticker_bio
-            final_bio.name = "sticker.webp"
-        else:
-            final_bio = BytesIO(raw_image)
-            final_bio.name = "sticker.webp"
+        # Force 512px resize
+        sticker_bio = force_512_scale(raw_image)
+        sticker_bio.name = "sticker.webp"
 
-        # 3. Send using client.send_sticker
+        # Use client.send_sticker to FORCE sticker type
         await client.send_sticker(
             chat_id=message.chat.id,
-            sticker=final_bio,
+            sticker=sticker_bio,
             reply_to_message_id=message.reply_to_message.id
         )
         await ww.delete()
@@ -331,7 +321,6 @@ async def custom_quote_cmd(client: Client, message: Message):
         logger.error(f"Failed to create custom quote sticker: {e}")
         await ww.edit(f"**❌ Error:** `{e}`")
 
-# --- Help Documentation ---
 __help__ = """
 **💬 Quote Sticker Module:**
 
