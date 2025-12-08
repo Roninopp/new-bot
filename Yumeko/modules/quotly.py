@@ -29,15 +29,23 @@ COLORS = [
 def ensure_resources():
     if not os.path.isdir("resources"):
         os.mkdir("resources", 0o755)
-        fonts = {
-            "Roboto-Regular.ttf": "https://github.com/erenmetesar/modules-repo/raw/master/Roboto-Regular.ttf",
-            "Quivira.otf": "https://github.com/erenmetesar/modules-repo/raw/master/Quivira.otf",
-            "Roboto-Medium.ttf": "https://github.com/erenmetesar/modules-repo/raw/master/Roboto-Medium.ttf",
-            "DroidSansMono.ttf": "https://github.com/erenmetesar/modules-repo/raw/master/DroidSansMono.ttf",
-            "Roboto-Italic.ttf": "https://github.com/erenmetesar/modules-repo/raw/master/Roboto-Italic.ttf",
-        }
-        for font_name, url in fonts.items():
-            urllib.request.urlretrieve(url, f"resources/{font_name}")
+    
+    # Working font URLs from rawgit
+    fonts = {
+        "Roboto-Regular.ttf": "https://github.com/google/fonts/raw/main/apache/roboto/static/Roboto-Regular.ttf",
+        "Roboto-Medium.ttf": "https://github.com/google/fonts/raw/main/apache/roboto/static/Roboto-Medium.ttf",
+        "Roboto-Italic.ttf": "https://github.com/google/fonts/raw/main/apache/roboto/static/Roboto-Italic.ttf",
+        "DroidSansMono.ttf": "https://github.com/google/fonts/raw/main/apache/droidsansmono/DroidSansMono.ttf",
+        "Quivira.otf": "https://github.com/rbanffy/3270font/raw/master/fonts/3270Condensed/3270-Regular.otf",
+    }
+    
+    for font_name, url in fonts.items():
+        font_path = f"resources/{font_name}"
+        if not os.path.exists(font_path):
+            try:
+                urllib.request.urlretrieve(url, font_path)
+            except Exception as e:
+                print(f"Error downloading {font_name}: {e}")
 
 async def fontTest(letter):
     """Check if a letter is supported by the font"""
@@ -79,39 +87,21 @@ async def no_photo(user, tot):
     return pfp, color
 
 async def emoji_fetch(emoji_char):
-    """Fetch emoji image"""
+    """Fetch emoji image - simplified fallback"""
     try:
-        emojis = json.loads(
-            urllib.request.urlopen(
-                "https://github.com/erenmetesar/modules-repo/raw/master/emojis.txt"
-            )
-            .read()
-            .decode()
-        )
-        if emoji_char in emojis:
-            img = emojis[emoji_char]
-        else:
-            img = emojis["🖤"]
+        # Create a simple colored circle as fallback
+        emoji_img = Image.new("RGBA", (40, 40), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(emoji_img)
+        draw.ellipse((0, 0, 40, 40), fill=random.choice(COLORS))
         
-        emoji_path = "resources/emoji.png"
-        urllib.request.urlretrieve(img, emoji_path)
-        return await transparent(emoji_path)
+        mask = Image.new("L", (40, 40), 0)
+        draw_mask = ImageDraw.Draw(mask)
+        draw_mask.ellipse((0, 0, 40, 40), fill=255)
+        return emoji_img, mask
     except:
-        # Fallback emoji
         emoji_img = Image.new("RGBA", (40, 40), (0, 0, 0, 0))
         mask = Image.new("L", (40, 40), 0)
         return emoji_img, mask
-
-async def transparent(emoji_path):
-    """Make emoji transparent"""
-    emoji_img = Image.open(emoji_path).convert("RGBA")
-    emoji_img.thumbnail((40, 40))
-
-    # Mask
-    mask = Image.new("L", (40, 40), 0)
-    draw = ImageDraw.Draw(mask)
-    draw.ellipse((0, 0, 40, 40), fill=255)
-    return emoji_img, mask
 
 async def process_quote(msg_text, user, client: Client):
     """Process the quote and generate image"""
@@ -120,7 +110,7 @@ async def process_quote(msg_text, user, client: Client):
     # Load fonts
     font = ImageFont.truetype("resources/Roboto-Medium.ttf", 43, encoding="utf-16")
     font2 = ImageFont.truetype("resources/Roboto-Regular.ttf", 33, encoding="utf-16")
-    fallback = ImageFont.truetype("resources/Quivira.otf", 43, encoding="utf-16")
+    fallback = ImageFont.truetype("resources/Roboto-Medium.ttf", 43, encoding="utf-16")
 
     # Split text
     maxlength = 0
@@ -194,7 +184,7 @@ async def process_quote(msg_text, user, client: Client):
 
     # Write user name
     space = pfpbg.width + 30
-    namefallback = ImageFont.truetype("resources/Quivira.otf", 43, encoding="utf-16")
+    namefallback = ImageFont.truetype("resources/Roboto-Medium.ttf", 43, encoding="utf-16")
     for letter in tot:
         if letter in emoji.UNICODE_EMOJI:
             try:
@@ -214,7 +204,7 @@ async def process_quote(msg_text, user, client: Client):
     # Write message text
     x = pfpbg.width + 30
     y = 85
-    textfallback = ImageFont.truetype("resources/Quivira.otf", 33, encoding="utf-16")
+    textfallback = ImageFont.truetype("resources/Roboto-Regular.ttf", 33, encoding="utf-16")
     
     for line in text:
         for letter in line:
@@ -240,6 +230,8 @@ async def process_quote(msg_text, user, client: Client):
 @app.on_message(filters.command("q", prefixes=config.config.COMMAND_PREFIXES))
 async def quote_command(client: Client, message: Message):
     """Generate a quote sticker from replied message"""
+    output_path = None  # Initialize early
+    
     if not message.reply_to_message:
         await message.reply_text("**❌ Reply to a message to quote it!**")
         return
@@ -274,12 +266,13 @@ async def quote_command(client: Client, message: Message):
         
         # Cleanup
         await processing_msg.delete()
-        if os.path.exists(output_path):
-            os.remove(output_path)
-            
+        
     except Exception as e:
         await processing_msg.edit_text(f"**❌ Error creating quote:** `{str(e)}`")
-        if os.path.exists(output_path):
+    
+    finally:
+        # Cleanup file
+        if output_path and os.path.exists(output_path):
             os.remove(output_path)
 
 __help__ = """
