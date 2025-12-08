@@ -5,10 +5,18 @@ This version adds support for Telegram Premium status emojis.
 import logging
 import os
 import aiohttp
+from io import BytesIO
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from Yumeko import app
 import config
+
+# Try importing Pillow for image processing
+try:
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +205,29 @@ class ModifiedMessage(Message):
         
         self.reply_to_message = original_message.reply_to_message
 
+# --- Image Processor (The Fix) ---
+def resize_sticker(image_bytes: bytes) -> BytesIO:
+    """
+    Forces the image to be a standard WebP sticker using Pillow.
+    This fixes issues where Telegram treats the file as a document.
+    """
+    if not HAS_PIL:
+        # Fallback if PIL is not installed
+        return BytesIO(image_bytes)
+
+    im = Image.open(BytesIO(image_bytes))
+    
+    if (im.width, im.height) != (512, 512):
+        # Resize logic to fit 512x512 box while keeping aspect ratio
+        size = (512, 512)
+        im.thumbnail(size, Image.Resampling.LANCZOS)
+    
+    output = BytesIO()
+    # Save as WebP to a new stream
+    im.save(output, format="WEBP")
+    output.seek(0)
+    return output
+
 
 # --- Command Handler for /q and /q r ---
 @app.on_message(filters.command("q", prefixes=config.config.COMMAND_PREFIXES))
@@ -209,28 +240,20 @@ async def msg_quotly_cmd(client: Client, message: Message):
     is_reply_mode = len(message.command) > 1 and message.command[1].lower() == 'r'
     
     target_message = ModifiedMessage(message.reply_to_message)
-    file_name = f"sticker_{message.id}.webp"
 
     try:
-        make_quotly = await pyrogram_to_quotly([target_message], is_reply=is_reply_mode)
+        raw_image = await pyrogram_to_quotly([target_message], is_reply=is_reply_mode)
         
-        # Save to disk to ensure it's treated as a file by the OS
-        with open(file_name, "wb") as f:
-            f.write(make_quotly)
+        # Process the image with Pillow to force valid sticker format
+        sticker_bio = resize_sticker(raw_image)
+        sticker_bio.name = "sticker.webp"
         
-        await client.send_sticker(
-            chat_id=message.chat.id, 
-            sticker=file_name, 
-            reply_to_message_id=message.id
-        )
+        # Use reply_sticker which handles the stream correctly
+        await message.reply_sticker(sticker_bio, quote=False)
         await ww.delete()
     except Exception as e:
         logger.error(f"Failed to create quote sticker: {e}")
         await ww.edit(f"**❌ Error:** `{e}`")
-    finally:
-        # Cleanup the file
-        if os.path.exists(file_name):
-            os.remove(file_name)
 
 # --- Command Handler for /qt {custom_text} ---
 @app.on_message(filters.command("qt", prefixes=config.config.COMMAND_PREFIXES))
@@ -265,28 +288,20 @@ async def custom_quote_cmd(client: Client, message: Message):
         custom_text = full_text_input
 
     modified_message = ModifiedMessage(message.reply_to_message, custom_text)
-    file_name = f"sticker_{message.id}.webp"
 
     try:
-        make_quotly = await pyrogram_to_quotly([modified_message], is_reply=is_reply_mode)
+        raw_image = await pyrogram_to_quotly([modified_message], is_reply=is_reply_mode)
         
-        # Save to disk to ensure it's treated as a file by the OS
-        with open(file_name, "wb") as f:
-            f.write(make_quotly)
+        # Process the image with Pillow to force valid sticker format
+        sticker_bio = resize_sticker(raw_image)
+        sticker_bio.name = "sticker.webp"
         
-        await client.send_sticker(
-            chat_id=message.chat.id, 
-            sticker=file_name, 
-            reply_to_message_id=message.id
-        )
+        # Use reply_sticker which handles the stream correctly
+        await message.reply_sticker(sticker_bio, quote=False)
         await ww.delete()
     except Exception as e:
         logger.error(f"Failed to create custom quote sticker: {e}")
         await ww.edit(f"**❌ Error:** `{e}`")
-    finally:
-        # Cleanup the file
-        if os.path.exists(file_name):
-            os.remove(file_name)
 
 # --- Help Documentation ---
 __help__ = """
