@@ -1,4 +1,4 @@
- """
+"""
 Plugin for creating quote stickers from messages using the external API.
 This version adds support for Telegram Premium status emojis.
 """
