@@ -2,7 +2,7 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait
-from pyrogram.enums import ChatMemberStatus
+from pyrogram.enums import ChatMemberStatus, ChatMembersFilter
 from Yumeko import app
 import config
 
@@ -202,10 +202,10 @@ async def admintag(client: Client, message: Message):
     
     status_msg = await message.reply_text("**🔍 Fetching admins...**")
     
-    # Get admins
+    # Get admins - Fixed: Use ChatMembersFilter.ADMINISTRATORS
     admins = []
     try:
-        async for admin in client.get_chat_members(chat_id, filter=filters.ChatMembersFilter.ADMINISTRATORS):
+        async for admin in client.get_chat_members(chat_id, filter=ChatMembersFilter.ADMINISTRATORS):
             if not admin.user.is_bot:
                 admins.append(admin.user)
     except Exception as e:
@@ -240,9 +240,8 @@ async def botstag(client: Client, message: Message):
     # Get bots
     bots = []
     try:
-        async for member in client.get_chat_members(chat_id):
-            if member.user.is_bot:
-                bots.append(member.user)
+        async for member in client.get_chat_members(chat_id, filter=ChatMembersFilter.BOTS):
+            bots.append(member.user)
     except Exception as e:
         await status_msg.edit_text(f"**❌ Error:** `{str(e)}`")
         return
