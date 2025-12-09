@@ -383,8 +383,12 @@ async def on_new_member_added(c: Client, m: Message):
 
 
 # Handler 2: Users joining via link (chat_member_updated)
-@app.on_chat_member_updated(filters.chat & ~filters.private)
+@app.on_chat_member_updated()
 async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
+    # Skip private chats
+    if update.chat.type == ChatType.PRIVATE:
+        return
+    
     # Detect new member joining
     old_member = update.old_chat_member
     new_member = update.new_chat_member
