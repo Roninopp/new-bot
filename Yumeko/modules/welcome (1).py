@@ -246,7 +246,7 @@ async def create_welcome_card(user: User, chat_title: str, member_count: int, pr
 async def send_welcome_message(c: Client, chat_id: int, user: User, chat_obj):
     """Send welcome message - either card or custom text
     
-    NOTE: Bot MUST be an admin in Private Supergroups to receive new_chat_members events.
+    NOTE: Bot MUST be an admin in Private Supergroups to receive chat_member_updated events.
     This is a Telegram API limitation for private groups.
     """
     print(f"\n[WELCOME SEND] ========== INSIDE send_welcome_message ==========")
@@ -435,180 +435,150 @@ async def send_welcome_message(c: Client, chat_id: int, user: User, chat_obj):
         print(f"[WELCOME SEND] ========== END send_welcome_message (WITH ERROR) ==========\n")
 
 
-# Handler 1: Manual adds (when admin adds someone)
-# NOTE: Bot MUST be an admin to receive this event in Private Supergroups
-@app.on_message(filters.new_chat_members)
-async def on_new_member_added(c: Client, m: Message):
-    # CATCH-ALL LOG - This should ALWAYS print if handler is triggered
-    print(f"\n{'='*80}")
-    print(f"[WELCOME DEBUG] HANDLER TRIGGERED! Received new_chat_members event")
-    print(f"[WELCOME DEBUG] Raw Chat ID: {m.chat.id}")
-    print(f"[WELCOME DEBUG] Raw Chat Type: {m.chat.type}")
-    print(f"[WELCOME DEBUG] Has chat.title? {hasattr(m.chat, 'title')}")
-    print(f"[WELCOME DEBUG] Chat Title: {m.chat.title if hasattr(m.chat, 'title') else 'NO TITLE ATTRIBUTE'}")
-    print(f"[WELCOME DEBUG] Has chat.username? {hasattr(m.chat, 'username')}")
-    print(f"[WELCOME DEBUG] Chat Username: {m.chat.username if hasattr(m.chat, 'username') and m.chat.username else 'NO USERNAME (PRIVATE GROUP)'}")
-    print(f"[WELCOME DEBUG] Number of new members: {len(m.new_chat_members)}")
-    print(f"{'='*80}\n")
-    
-    # Check chat type
-    print(f"[WELCOME DEBUG] Checking chat type...")
-    if m.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL]:
-        print(f"[WELCOME DEBUG] ❌ REJECTED: Chat type {m.chat.type} not in allowed types")
-        print(f"[WELCOME DEBUG] Allowed types: GROUP={ChatType.GROUP}, SUPERGROUP={ChatType.SUPERGROUP}, CHANNEL={ChatType.CHANNEL}")
-        return
-    else:
-        print(f"[WELCOME DEBUG] ✓ Chat type {m.chat.type} is ALLOWED")
-    
-    # Additional check: Skip if it's actually a private chat somehow
-    print(f"[WELCOME DEBUG] Checking if private chat...")
-    if m.chat.type == ChatType.PRIVATE:
-        print(f"[WELCOME DEBUG] ❌ REJECTED: This is a private chat (1-on-1)")
-        return
-    else:
-        print(f"[WELCOME DEBUG] ✓ Not a private chat, continuing...")
-    
-    print(f"[WELCOME DEBUG] Starting to iterate through {len(m.new_chat_members)} new members...")
-    
-    for idx, user in enumerate(m.new_chat_members):
-        print(f"\n[WELCOME DEBUG] --- Processing member {idx + 1}/{len(m.new_chat_members)} ---")
-        print(f"[WELCOME DEBUG] User First Name: {user.first_name}")
-        print(f"[WELCOME DEBUG] User ID: {user.id}")
-        print(f"[WELCOME DEBUG] User is_bot: {user.is_bot}")
-        print(f"[WELCOME DEBUG] Bot's own ID: {c.me.id}")
-        
-        # Skip bot itself
-        if user.id == c.me.id:
-            print(f"[WELCOME DEBUG] ❌ SKIPPED: User ID {user.id} matches bot ID {c.me.id}")
-            continue
-        else:
-            print(f"[WELCOME DEBUG] ✓ User ID {user.id} != bot ID {c.me.id}, proceeding...")
-        
-        print(f"[WELCOME DEBUG] Calling send_welcome_message for user {user.first_name}...")
-        await send_welcome_message(c, m.chat.id, user, m.chat)
-        print(f"[WELCOME DEBUG] Returned from send_welcome_message for user {user.first_name}")
-
-
-# Handler 2: Users joining (PRIMARY handler for Supergroups)
-# This handler watches the member list DIRECTLY - works even when service messages are hidden
+# PRIMARY HANDLER: Status-based detection (works in ALL group types)
+# This handler watches member status changes directly - works even when service messages are hidden
 # NOTE: Bot MUST be an admin to receive chat_member_updated events
 @app.on_chat_member_updated()
-async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
-    # CATCH-ALL LOG - This should ALWAYS print if handler is triggered
+async def on_member_status_changed(c: Client, update: ChatMemberUpdated):
+    """
+    PRIMARY HANDLER: Detects user joins via status transitions.
+    Works in ALL groups (public/private/supergroups) regardless of service message settings.
+    
+    REQUIRES: Bot must be an admin to receive chat_member_updated events.
+    """
     print(f"\n{'='*80}")
-    print(f"[WELCOME DEBUG CMU] HANDLER TRIGGERED! Received chat_member_updated event")
-    print(f"[WELCOME DEBUG CMU] Raw Chat ID: {update.chat.id}")
-    print(f"[WELCOME DEBUG CMU] Raw Chat Type: {update.chat.type}")
-    print(f"[WELCOME DEBUG CMU] Has chat.title? {hasattr(update.chat, 'title')}")
-    print(f"[WELCOME DEBUG CMU] Chat Title: {update.chat.title if hasattr(update.chat, 'title') else 'NO TITLE'}")
-    print(f"[WELCOME DEBUG CMU] Has chat.username? {hasattr(update.chat, 'username')}")
-    print(f"[WELCOME DEBUG CMU] Chat Username: {update.chat.username if hasattr(update.chat, 'username') and update.chat.username else 'NO USERNAME (PRIVATE)'}")
+    print(f"[WELCOME CMU] ========== chat_member_updated TRIGGERED ==========")
+    print(f"[WELCOME CMU] Chat ID: {update.chat.id}")
+    print(f"[WELCOME CMU] Chat Type: {update.chat.type}")
+    print(f"[WELCOME CMU] Chat Title: {getattr(update.chat, 'title', 'NO TITLE')}")
+    print(f"[WELCOME CMU] Chat Username: {getattr(update.chat, 'username', None) or 'PRIVATE GROUP'}")
     print(f"{'='*80}\n")
     
-    # Skip private chats
-    print(f"[WELCOME DEBUG CMU] Checking if private chat...")
+    # Skip private chats (1-on-1 conversations)
     if update.chat.type == ChatType.PRIVATE:
-        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Private chat type")
+        print(f"[WELCOME CMU] ❌ REJECTED: Private chat (1-on-1 DM)")
         return
-    else:
-        print(f"[WELCOME DEBUG CMU] ✓ Not a private chat")
     
-    # Process ALL group types - treat public and private groups the same
-    print(f"[WELCOME DEBUG CMU] Checking chat type...")
+    # Only process groups and supergroups
     if update.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL]:
-        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Chat type {update.chat.type} not allowed")
+        print(f"[WELCOME CMU] ❌ REJECTED: Invalid chat type {update.chat.type}")
         return
-    else:
-        print(f"[WELCOME DEBUG CMU] ✓ Chat type {update.chat.type} is allowed")
     
-    # Get old and new member info
+    print(f"[WELCOME CMU] ✓ Valid group type: {update.chat.type}")
+    
+    # Extract member status info
     old_member = update.old_chat_member
     new_member = update.new_chat_member
     
-    print(f"[WELCOME DEBUG CMU] Member status transition:")
-    print(f"[WELCOME DEBUG CMU] - Old status: {old_member.status if old_member else 'None (brand new)'}")
-    print(f"[WELCOME DEBUG CMU] - New status: {new_member.status if new_member else 'None'}")
+    print(f"[WELCOME CMU] Member Status Transition:")
+    print(f"[WELCOME CMU] - OLD: {old_member.status if old_member else 'None (brand new)'}")
+    print(f"[WELCOME CMU] - NEW: {new_member.status if new_member else 'None'}")
     
-    # Check if new_member exists
+    # Safety check: new_member must exist
     if not new_member:
-        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: new_member is None")
+        print(f"[WELCOME CMU] ❌ REJECTED: new_member is None")
         return
     
-    # THIS IS THE KEY FIX: Detect if user is JOINING
-    # User is joining if:
-    # 1. old_member doesn't exist (brand new to group) OR
-    # 2. old_member.status was "left"/"kicked"/"restricted" AND new_member.status is now "member"/"administrator"/"creator"
+    # CRITICAL LOGIC: Detect if this is a JOIN event
+    # A user is JOINING if:
+    # 1. old_member doesn't exist (first time in group) OR
+    # 2. old_member status was "left"/"banned"/"kicked" AND new_member status is now "member"/"administrator"/"creator"
     
-    is_new_join = False
+    is_join_event = False
     
     if not old_member:
-        # Brand new member (no previous status)
-        print(f"[WELCOME DEBUG CMU] Scenario: BRAND NEW member (no old status)")
-        is_new_join = True
+        # Brand new member (never been in group before)
+        print(f"[WELCOME CMU] ✓ JOIN DETECTED: Brand new member (no prior status)")
+        is_join_event = True
     elif old_member.status in ["left", "kicked", "banned", "restricted"]:
-        # User was previously left/kicked and now rejoining
-        print(f"[WELCOME DEBUG CMU] Scenario: User was '{old_member.status}' and is now rejoining")
+        # User was previously not in the group and is now rejoining
+        print(f"[WELCOME CMU] User was previously: {old_member.status}")
         if new_member.status in ["member", "administrator", "creator"]:
-            is_new_join = True
-            print(f"[WELCOME DEBUG CMU] ✓ Status changed from '{old_member.status}' to '{new_member.status}' - THIS IS A JOIN!")
+            print(f"[WELCOME CMU] ✓ JOIN DETECTED: Status changed from '{old_member.status}' → '{new_member.status}'")
+            is_join_event = True
         else:
-            print(f"[WELCOME DEBUG CMU] ❌ New status '{new_member.status}' is not a member status")
+            print(f"[WELCOME CMU] ❌ REJECTED: New status '{new_member.status}' is not active membership")
     else:
-        # User already was a member, this is just a profile/permission update
-        print(f"[WELCOME DEBUG CMU] Scenario: Member update (old: '{old_member.status}' -> new: '{new_member.status}')")
-        print(f"[WELCOME DEBUG CMU] ❌ NOT a join event (user was already a member)")
+        # User was already a member, this is a permission/profile update
+        print(f"[WELCOME CMU] ❌ NOT A JOIN: Member update ('{old_member.status}' → '{new_member.status}')")
+        print(f"[WELCOME CMU] This is a status/permission change, not a join event")
     
-    if not is_new_join:
-        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Not a join event")
+    # If not a join event, stop here
+    if not is_join_event:
+        print(f"[WELCOME CMU] ❌ FINAL DECISION: Not a join event, skipping")
         return
     
-    # Additional safety check: new member status must be active
+    # Additional validation: new member status must be active
     if new_member.status not in ["member", "administrator", "creator"]:
-        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Status '{new_member.status}' not in allowed statuses")
+        print(f"[WELCOME CMU] ❌ REJECTED: Status '{new_member.status}' not in allowed list")
         return
-    else:
-        print(f"[WELCOME DEBUG CMU] ✓ Status '{new_member.status}' is allowed")
     
+    print(f"[WELCOME CMU] ✓ Status '{new_member.status}' is valid")
+    
+    # Get user info
     user = new_member.user
     
-    print(f"[WELCOME DEBUG CMU] User details:")
-    print(f"[WELCOME DEBUG CMU] - Name: {user.first_name}")
-    print(f"[WELCOME DEBUG CMU] - ID: {user.id}")
-    print(f"[WELCOME DEBUG CMU] - is_bot: {user.is_bot}")
-    print(f"[WELCOME DEBUG CMU] - Bot's ID: {c.me.id}")
+    print(f"[WELCOME CMU] User Details:")
+    print(f"[WELCOME CMU] - Name: {user.first_name}")
+    print(f"[WELCOME CMU] - ID: {user.id}")
+    print(f"[WELCOME CMU] - Is Bot: {user.is_bot}")
+    print(f"[WELCOME CMU] - My Bot ID: {c.me.id}")
     
-    # Skip bot itself
+    # Skip if user is the bot itself
     if user.id == c.me.id:
-        print(f"[WELCOME DEBUG CMU] ❌ SKIPPED: User is the bot itself")
-        return
-    else:
-        print(f"[WELCOME DEBUG CMU] ✓ User is not the bot")
-    
-    print(f"[WELCOME DEBUG CMU] ✓✓✓ ALL CHECKS PASSED - PROCEEDING TO SEND WELCOME!")
-    print(f"[WELCOME DEBUG CMU] Calling send_welcome_message...")
-    await send_welcome_message(c, update.chat.id, user, update.chat)
-    print(f"[WELCOME DEBUG CMU] Returned from send_welcome_message")
-    
-    # Check if it's actually a new join
-    if old_member or not new_member:
+        print(f"[WELCOME CMU] ❌ SKIPPED: User is the bot itself")
         return
     
-    # Check if member actually joined (not kicked, banned, left)
-    if new_member.status not in ["member", "administrator", "creator"]:
-        return
-    
-    user = new_member.user
-    
-    print(f"\n[WELCOME] ========== JOIN VIA LINK EVENT ==========")
-    print(f"[WELCOME] Chat: {update.chat.id} | Type: {update.chat.type} | Title: {update.chat.title}")
-    print(f"[WELCOME] New member: {user.first_name} (ID: {user.id})")
-    
-    # Skip bot itself
-    if user.id == c.me.id:
-        print(f"[WELCOME] Skipping bot itself")
-        return
+    print(f"[WELCOME CMU] ✓✓✓ ALL CHECKS PASSED - SENDING WELCOME MESSAGE!")
+    print(f"[WELCOME CMU] Calling send_welcome_message...")
     
     await send_welcome_message(c, update.chat.id, user, update.chat)
+    
+    print(f"[WELCOME CMU] ✓ Returned from send_welcome_message")
+    print(f"[WELCOME CMU] ========== END chat_member_updated ==========\n")
+
+
+# FALLBACK HANDLER: Message-based detection (only works when service messages are enabled)
+# Kept for compatibility with groups that have service messages enabled
+@app.on_message(filters.new_chat_members)
+async def on_new_member_added(c: Client, m: Message):
+    """
+    FALLBACK HANDLER: Handles manual adds when service messages are visible.
+    Only triggers in groups with service messages enabled.
+    Primary handler is on_member_status_changed above.
+    """
+    print(f"\n{'='*80}")
+    print(f"[WELCOME MSG] ========== new_chat_members TRIGGERED (FALLBACK) ==========")
+    print(f"[WELCOME MSG] Chat ID: {m.chat.id}")
+    print(f"[WELCOME MSG] Chat Type: {m.chat.type}")
+    print(f"[WELCOME MSG] New Members Count: {len(m.new_chat_members)}")
+    print(f"{'='*80}\n")
+    
+    # Check chat type
+    if m.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL]:
+        print(f"[WELCOME MSG] ❌ REJECTED: Invalid chat type {m.chat.type}")
+        return
+    
+    if m.chat.type == ChatType.PRIVATE:
+        print(f"[WELCOME MSG] ❌ REJECTED: Private chat")
+        return
+    
+    print(f"[WELCOME MSG] Processing {len(m.new_chat_members)} new members...")
+    
+    for idx, user in enumerate(m.new_chat_members):
+        print(f"\n[WELCOME MSG] --- Member {idx + 1}/{len(m.new_chat_members)} ---")
+        print(f"[WELCOME MSG] User: {user.first_name} (ID: {user.id})")
+        
+        # Skip bot itself
+        if user.id == c.me.id:
+            print(f"[WELCOME MSG] ❌ SKIPPED: Bot itself")
+            continue
+        
+        print(f"[WELCOME MSG] ✓ Sending welcome for {user.first_name}...")
+        await send_welcome_message(c, m.chat.id, user, m.chat)
+        print(f"[WELCOME MSG] ✓ Completed for {user.first_name}")
+    
+    print(f"[WELCOME MSG] ========== END new_chat_members ==========\n")
 
 
 @app.on_message(filters.command("cleanwelcome", config.COMMAND_PREFIXES))
@@ -958,6 +928,8 @@ __help__ = """**Customize Welcome/Goodbye Messages (V2):**
 
 **Professional Welcome Cards**: Automatically generates beautiful welcome cards with user profile pictures!
 
+**IMPORTANT**: Bot must be an admin to detect joins in private supergroups!
+
 **Customize Messages:**
   /setwelcome <reply> - Sets custom welcome (disables welcome card)
   /setgoodbye <reply> - Sets custom goodbye
@@ -975,7 +947,8 @@ __help__ = """**Customize Welcome/Goodbye Messages (V2):**
 **Notes:**
   - Works in both public and private groups!
   - Works when users join via invite link or are manually added
+  - Uses status-based detection (no service messages needed)
   - Automatically generates welcome cards with profile pictures
   - Using /setwelcome switches to custom message mode
-  - Yumeko must be an admin to greet users
+  - Bot MUST be an admin in private groups to receive join events
 """
