@@ -249,26 +249,46 @@ async def send_welcome_message(c: Client, chat_id: int, user: User, chat_obj):
     NOTE: Bot MUST be an admin in Private Supergroups to receive new_chat_members events.
     This is a Telegram API limitation for private groups.
     """
+    print(f"\n[WELCOME SEND] ========== INSIDE send_welcome_message ==========")
+    print(f"[WELCOME SEND] Chat ID: {chat_id}")
+    print(f"[WELCOME SEND] User: {user.first_name} (ID: {user.id})")
+    
     try:
+        print(f"[WELCOME SEND] Initializing database...")
         db = Greetings(chat_id)
+        print(f"[WELCOME SEND] ✓ Database initialized")
         
         # Check if welcome is enabled
+        print(f"[WELCOME SEND] Checking if welcome is enabled...")
         status = db.get_welcome_status()
-        if not status:
-            print(f"[WELCOME] Welcome disabled for chat {chat_id}")
-            return
+        print(f"[WELCOME SEND] Welcome status from DB: {status}")
         
+        if not status:
+            print(f"[WELCOME SEND] ❌ REJECTED: Welcome is disabled in database for this chat")
+            return
+        else:
+            print(f"[WELCOME SEND] ✓ Welcome is enabled")
+        
+        print(f"[WELCOME SEND] Getting welcome settings from database...")
         oo = db.get_welcome_text()
         UwU = db.get_welcome_media()
         mtype = db.get_welcome_msgtype()
+        print(f"[WELCOME SEND] DB Values:")
+        print(f"[WELCOME SEND] - welcome_text: {oo[:100] if oo else None}...")
+        print(f"[WELCOME SEND] - welcome_media: {UwU}")
+        print(f"[WELCOME SEND] - welcome_mtype: {mtype}")
         
         # Check if custom welcome is set
         is_custom_welcome = (mtype is not None and mtype is not False) or (UwU is not None and UwU is not False)
+        print(f"[WELCOME SEND] Is custom welcome? {is_custom_welcome}")
         
         # Get member count
+        print(f"[WELCOME SEND] Getting member count...")
         try:
             member_count = await c.get_chat_members_count(chat_id)
-        except:
+            print(f"[WELCOME SEND] ✓ Member count: {member_count}")
+        except Exception as e:
+            print(f"[WELCOME SEND] ❌ Error getting member count: {e}")
             member_count = 0
         
         # Create a minimal message object for formatting
@@ -282,7 +302,7 @@ async def send_welcome_message(c: Client, chat_id: int, user: User, chat_obj):
         
         if is_custom_welcome:
             # Custom welcome
-            print(f"[WELCOME] Sending custom welcome")
+            print(f"[WELCOME SEND] Using CUSTOM welcome message")
             hmm = await escape_mentions_using_curly_brackets_wl(user, minimal_msg, oo, parse_words)
             tek, button = await parse_button(hmm)
             button = await build_keyboard(button)
@@ -296,155 +316,252 @@ async def send_welcome_message(c: Client, chat_id: int, user: User, chat_obj):
 
             if not teks:
                 teks = f"Welcome {user.mention}!"
+                print(f"[WELCOME SEND] No custom text found, using default")
+            
+            print(f"[WELCOME SEND] Final text: {teks[:100]}...")
 
             # Clean previous welcome if enabled
             ifff = db.get_current_cleanwelcome_id()
             gg = db.get_current_cleanwelcome_settings()
+            print(f"[WELCOME SEND] Clean welcome? {gg}, Previous ID: {ifff}")
+            
             if ifff and gg:
                 try:
                     await c.delete_messages(chat_id, int(ifff))
-                except:
-                    pass
+                    print(f"[WELCOME SEND] ✓ Deleted previous welcome message")
+                except Exception as e:
+                    print(f"[WELCOME SEND] Could not delete previous message: {e}")
             
-            if not UwU:
-                jj = await c.send_message(
-                    chat_id,
-                    text=teks,
-                    reply_markup=button,
-                    disable_web_page_preview=True,
-                )
-            else:
-                jj = await (await send_cmd(c, mtype))(
-                    chat_id,
-                    UwU,
-                    caption=teks,
-                    reply_markup=button,
-                )
+            print(f"[WELCOME SEND] Attempting to send custom message...")
+            try:
+                if not UwU:
+                    jj = await c.send_message(
+                        chat_id,
+                        text=teks,
+                        reply_markup=button,
+                        disable_web_page_preview=True,
+                    )
+                else:
+                    jj = await (await send_cmd(c, mtype))(
+                        chat_id,
+                        UwU,
+                        caption=teks,
+                        reply_markup=button,
+                    )
 
-            if jj:
-                db.set_cleanwlcm_id(int(jj.id))
+                if jj:
+                    db.set_cleanwlcm_id(int(jj.id))
+                    print(f"[WELCOME SEND] ✓✓✓ CUSTOM MESSAGE SENT! Message ID: {jj.id}")
+                else:
+                    print(f"[WELCOME SEND] ❌ Message object is None")
+            except Exception as e:
+                print(f"[WELCOME SEND] ❌❌❌ ERROR sending custom message: {e}")
+                import traceback
+                traceback.print_exc()
             
         else:
             # Welcome card
-            print(f"[WELCOME] Sending welcome card")
+            print(f"[WELCOME SEND] Using WELCOME CARD system")
+            
+            print(f"[WELCOME SEND] Downloading profile picture...")
             profile_pic_path = await download_profile_pic(user, c)
+            print(f"[WELCOME SEND] Profile pic path: {profile_pic_path}")
             
             # Get chat title - works for both public and private groups
             chat_title = "this group"
             if hasattr(chat_obj, 'title') and chat_obj.title:
                 chat_title = chat_obj.title
+                print(f"[WELCOME SEND] ✓ Chat title: {chat_title}")
+            else:
+                print(f"[WELCOME SEND] No chat title found, using default")
             
-            print(f"[WELCOME] Chat title: {chat_title}, Member count: {member_count}")
-            
+            print(f"[WELCOME SEND] Creating welcome card...")
             welcome_card = await create_welcome_card(user, chat_title, member_count, profile_pic_path)
             
             if welcome_card:
+                print(f"[WELCOME SEND] ✓ Welcome card created successfully")
+                
                 # Clean previous welcome if enabled
                 ifff = db.get_current_cleanwelcome_id()
                 gg = db.get_current_cleanwelcome_settings()
+                print(f"[WELCOME SEND] Clean welcome? {gg}, Previous ID: {ifff}")
+                
                 if ifff and gg:
                     try:
                         await c.delete_messages(chat_id, int(ifff))
-                    except:
-                        pass
+                        print(f"[WELCOME SEND] ✓ Deleted previous welcome")
+                    except Exception as e:
+                        print(f"[WELCOME SEND] Could not delete previous: {e}")
                 
                 caption = f"Welcome to {chat_title}, {user.mention}! 🎉"
-                jj = await c.send_photo(
-                    chat_id,
-                    photo=welcome_card,
-                    caption=caption
-                )
+                print(f"[WELCOME SEND] Caption: {caption}")
+                print(f"[WELCOME SEND] Attempting to send welcome card photo...")
                 
-                if jj:
-                    db.set_cleanwlcm_id(int(jj.id))
+                try:
+                    jj = await c.send_photo(
+                        chat_id,
+                        photo=welcome_card,
+                        caption=caption
+                    )
+                    
+                    if jj:
+                        db.set_cleanwlcm_id(int(jj.id))
+                        print(f"[WELCOME SEND] ✓✓✓ WELCOME CARD SENT! Message ID: {jj.id}")
+                    else:
+                        print(f"[WELCOME SEND] ❌ Message object is None")
+                except Exception as e:
+                    print(f"[WELCOME SEND] ❌❌❌ ERROR sending welcome card: {e}")
+                    import traceback
+                    traceback.print_exc()
             else:
+                print(f"[WELCOME SEND] ❌ Welcome card generation failed")
                 # Fallback to text
+                print(f"[WELCOME SEND] Using text fallback...")
                 teks = f"Welcome {user.mention} to {chat_title}! 🎉\nYou are member #{member_count}"
-                jj = await c.send_message(chat_id, text=teks)
-                if jj:
-                    db.set_cleanwlcm_id(int(jj.id))
+                try:
+                    jj = await c.send_message(chat_id, text=teks)
+                    if jj:
+                        db.set_cleanwlcm_id(int(jj.id))
+                        print(f"[WELCOME SEND] ✓ Fallback text sent! Message ID: {jj.id}")
+                except Exception as e:
+                    print(f"[WELCOME SEND] ❌ Error sending fallback: {e}")
         
-        print(f"[WELCOME] ✓ Welcome sent successfully!")
+        print(f"[WELCOME SEND] ========== END send_welcome_message ==========\n")
         
     except Exception as e:
-        print(f"[WELCOME] Error sending welcome: {e}")
+        print(f"[WELCOME SEND] ❌❌❌ CRITICAL ERROR in send_welcome_message: {e}")
         import traceback
         traceback.print_exc()
+        print(f"[WELCOME SEND] ========== END send_welcome_message (WITH ERROR) ==========\n")
 
 
 # Handler 1: Manual adds (when admin adds someone)
 # NOTE: Bot MUST be an admin to receive this event in Private Supergroups
 @app.on_message(filters.new_chat_members)
 async def on_new_member_added(c: Client, m: Message):
-    print(f"\n[WELCOME] ========== MANUAL ADD EVENT ==========")
-    print(f"[WELCOME] Chat ID: {m.chat.id}")
-    print(f"[WELCOME] Chat Type: {m.chat.type}")
-    print(f"[WELCOME] Chat Username: {m.chat.username if hasattr(m.chat, 'username') else 'None (Private Group)'}")
-    print(f"[WELCOME] Chat Title: {m.chat.title if hasattr(m.chat, 'title') else 'No Title'}")
+    # CATCH-ALL LOG - This should ALWAYS print if handler is triggered
+    print(f"\n{'='*80}")
+    print(f"[WELCOME DEBUG] HANDLER TRIGGERED! Received new_chat_members event")
+    print(f"[WELCOME DEBUG] Raw Chat ID: {m.chat.id}")
+    print(f"[WELCOME DEBUG] Raw Chat Type: {m.chat.type}")
+    print(f"[WELCOME DEBUG] Has chat.title? {hasattr(m.chat, 'title')}")
+    print(f"[WELCOME DEBUG] Chat Title: {m.chat.title if hasattr(m.chat, 'title') else 'NO TITLE ATTRIBUTE'}")
+    print(f"[WELCOME DEBUG] Has chat.username? {hasattr(m.chat, 'username')}")
+    print(f"[WELCOME DEBUG] Chat Username: {m.chat.username if hasattr(m.chat, 'username') and m.chat.username else 'NO USERNAME (PRIVATE GROUP)'}")
+    print(f"[WELCOME DEBUG] Number of new members: {len(m.new_chat_members)}")
+    print(f"{'='*80}\n")
     
-    # Process ALL group types - both public and private
-    # ChatType.GROUP = old-style groups
-    # ChatType.SUPERGROUP = supergroups (both public and private)
-    # ChatType.CHANNEL = channels (sometimes used for private supergroups)
+    # Check chat type
+    print(f"[WELCOME DEBUG] Checking chat type...")
     if m.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL]:
-        print(f"[WELCOME] Skipping - not a group/supergroup/channel")
+        print(f"[WELCOME DEBUG] ❌ REJECTED: Chat type {m.chat.type} not in allowed types")
+        print(f"[WELCOME DEBUG] Allowed types: GROUP={ChatType.GROUP}, SUPERGROUP={ChatType.SUPERGROUP}, CHANNEL={ChatType.CHANNEL}")
         return
+    else:
+        print(f"[WELCOME DEBUG] ✓ Chat type {m.chat.type} is ALLOWED")
     
     # Additional check: Skip if it's actually a private chat somehow
+    print(f"[WELCOME DEBUG] Checking if private chat...")
     if m.chat.type == ChatType.PRIVATE:
-        print(f"[WELCOME] Skipping - private chat")
+        print(f"[WELCOME DEBUG] ❌ REJECTED: This is a private chat (1-on-1)")
         return
+    else:
+        print(f"[WELCOME DEBUG] ✓ Not a private chat, continuing...")
     
-    for user in m.new_chat_members:
-        print(f"[WELCOME] New member: {user.first_name} (ID: {user.id})")
+    print(f"[WELCOME DEBUG] Starting to iterate through {len(m.new_chat_members)} new members...")
+    
+    for idx, user in enumerate(m.new_chat_members):
+        print(f"\n[WELCOME DEBUG] --- Processing member {idx + 1}/{len(m.new_chat_members)} ---")
+        print(f"[WELCOME DEBUG] User First Name: {user.first_name}")
+        print(f"[WELCOME DEBUG] User ID: {user.id}")
+        print(f"[WELCOME DEBUG] User is_bot: {user.is_bot}")
+        print(f"[WELCOME DEBUG] Bot's own ID: {c.me.id}")
         
         # Skip bot itself
         if user.id == c.me.id:
-            print(f"[WELCOME] Skipping - it's the bot itself")
+            print(f"[WELCOME DEBUG] ❌ SKIPPED: User ID {user.id} matches bot ID {c.me.id}")
             continue
+        else:
+            print(f"[WELCOME DEBUG] ✓ User ID {user.id} != bot ID {c.me.id}, proceeding...")
         
+        print(f"[WELCOME DEBUG] Calling send_welcome_message for user {user.first_name}...")
         await send_welcome_message(c, m.chat.id, user, m.chat)
+        print(f"[WELCOME DEBUG] Returned from send_welcome_message for user {user.first_name}")
 
 
 # Handler 2: Users joining via link (chat_member_updated)
 # NOTE: Bot MUST be an admin to receive this event in Private Supergroups
 @app.on_chat_member_updated()
 async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
+    # CATCH-ALL LOG - This should ALWAYS print if handler is triggered
+    print(f"\n{'='*80}")
+    print(f"[WELCOME DEBUG CMU] HANDLER TRIGGERED! Received chat_member_updated event")
+    print(f"[WELCOME DEBUG CMU] Raw Chat ID: {update.chat.id}")
+    print(f"[WELCOME DEBUG CMU] Raw Chat Type: {update.chat.type}")
+    print(f"[WELCOME DEBUG CMU] Has chat.title? {hasattr(update.chat, 'title')}")
+    print(f"[WELCOME DEBUG CMU] Chat Title: {update.chat.title if hasattr(update.chat, 'title') else 'NO TITLE'}")
+    print(f"[WELCOME DEBUG CMU] Has chat.username? {hasattr(update.chat, 'username')}")
+    print(f"[WELCOME DEBUG CMU] Chat Username: {update.chat.username if hasattr(update.chat, 'username') and update.chat.username else 'NO USERNAME (PRIVATE)'}")
+    print(f"[WELCOME DEBUG CMU] Old member: {update.old_chat_member}")
+    print(f"[WELCOME DEBUG CMU] New member: {update.new_chat_member}")
+    print(f"{'='*80}\n")
+    
     # Skip private chats
+    print(f"[WELCOME DEBUG CMU] Checking if private chat...")
     if update.chat.type == ChatType.PRIVATE:
+        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Private chat type")
         return
+    else:
+        print(f"[WELCOME DEBUG CMU] ✓ Not a private chat")
     
     # Process ALL group types - treat public and private groups the same
+    print(f"[WELCOME DEBUG CMU] Checking chat type...")
     if update.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL]:
+        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Chat type {update.chat.type} not allowed")
         return
+    else:
+        print(f"[WELCOME DEBUG CMU] ✓ Chat type {update.chat.type} is allowed")
     
     # Detect new member joining
     old_member = update.old_chat_member
     new_member = update.new_chat_member
     
+    print(f"[WELCOME DEBUG CMU] Old member status: {old_member.status if old_member else 'None'}")
+    print(f"[WELCOME DEBUG CMU] New member status: {new_member.status if new_member else 'None'}")
+    
     # Check if it's actually a new join
+    print(f"[WELCOME DEBUG CMU] Checking if this is a new join...")
     if old_member or not new_member:
+        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Not a new join (old_member exists or new_member is None)")
         return
+    else:
+        print(f"[WELCOME DEBUG CMU] ✓ This appears to be a new join")
     
     # Check if member actually joined (not kicked, banned, left)
+    print(f"[WELCOME DEBUG CMU] Checking member status...")
     if new_member.status not in ["member", "administrator", "creator"]:
+        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Status '{new_member.status}' not in allowed statuses")
         return
+    else:
+        print(f"[WELCOME DEBUG CMU] ✓ Status '{new_member.status}' is allowed")
     
     user = new_member.user
     
-    print(f"\n[WELCOME] ========== JOIN VIA LINK EVENT ==========")
-    print(f"[WELCOME] Chat ID: {update.chat.id}")
-    print(f"[WELCOME] Chat Type: {update.chat.type}")
-    print(f"[WELCOME] Chat Username: {update.chat.username if hasattr(update.chat, 'username') else 'None (Private Group)'}")
-    print(f"[WELCOME] Chat Title: {update.chat.title if hasattr(update.chat, 'title') else 'No Title'}")
-    print(f"[WELCOME] New member: {user.first_name} (ID: {user.id})")
+    print(f"[WELCOME DEBUG CMU] User details:")
+    print(f"[WELCOME DEBUG CMU] - Name: {user.first_name}")
+    print(f"[WELCOME DEBUG CMU] - ID: {user.id}")
+    print(f"[WELCOME DEBUG CMU] - Bot's ID: {c.me.id}")
     
     # Skip bot itself
     if user.id == c.me.id:
-        print(f"[WELCOME] Skipping - it's the bot itself")
+        print(f"[WELCOME DEBUG CMU] ❌ SKIPPED: User is the bot itself")
         return
+    else:
+        print(f"[WELCOME DEBUG CMU] ✓ User is not the bot")
     
+    print(f"[WELCOME DEBUG CMU] Calling send_welcome_message...")
     await send_welcome_message(c, update.chat.id, user, update.chat)
+    print(f"[WELCOME DEBUG CMU] Returned from send_welcome_message")
     
     # Check if it's actually a new join
     if old_member or not new_member:
