@@ -1,4 +1,3 @@
-
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import config
 from pymongo import MongoClient
@@ -71,6 +70,7 @@ couple_collection = db.Couple
 waifu_collection = db.Waifu
 gamesdb = db.Games
 karma_collection = db.Karma
+aura_collection = db.Aura  # <-- ADDED THIS LINE FOR AURA SYSTEM
 info_collection = db.UserInfo
 greetings_collection = db.WelcomeData
 banned_chats = db.BannedChats
@@ -144,6 +144,10 @@ async def setup_indexes():
         # Karma system indexes
         await karma_collection.create_index([("user_id", 1), ("chat_id", 1)], unique=True)
         await karma_collection.create_index([("chat_id", 1), ("karma", -1)])
+        
+        # Aura system indexes (ADDED FOR AURA SYSTEM)
+        await aura_collection.create_index([("user_id", 1), ("chat_id", 1)], unique=True)
+        await aura_collection.create_index([("chat_id", 1), ("aura", -1)])
         
         # Other chat settings indexes
         await log_channel_collection.create_index("chat_id", unique=True)
