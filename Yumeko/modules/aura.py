@@ -1,28 +1,66 @@
 from Yumeko.database import aura_db
 from pyrogram import Client, filters
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from Yumeko import app
 import config
 import random
 
+# Help text for the module
+__help__ = """
+**✨ Aura System - Spread Positivity! ✨**
+
+**What is Aura?**
+Aura points represent your positive energy in the group! Earn aura by being helpful, kind, and awesome. Lose aura by being negative.
+
+**How to Give/Remove Aura:**
+Reply to someone's message with:
+
+**Positive Words (Gain +1 Aura):**
+• `+`, `++`, `+1` - Quick aura boost
+• `nice`, `good`, `great`, `amazing`, `perfect`
+• `awesome`, `excellent`, `cool`, `pro`, `legend`
+• `thanks`, `thank you`, `ty`, `thx`
+• `agree`, `right`, `true`, `facts`
+• Emojis: 👍 🔥 💯 ✨ ⚡ 💪 👑
+
+**Negative Words (Lose -1 Aura):**
+• `-`, `--`, `-1` - Aura decrease
+• `bad`, `worst`, `terrible`, `trash`
+• `disagree`, `wrong`, `cringe`
+• Emojis: 👎 💀 😭
+
+**Commands:**
+• `/aura` - Check your current aura status
+• `/topaura` - View top aura users in the group
+
+**Aura Levels:**
+🌱 Growing (0-19) → 💪 Rising (20-49) → 🔥 Strong (50-99)
+⚡ Elite (100-249) → 🌟 Supreme (250-499) → ✨ Godlike (500-999)
+💫 Legendary (1000+)
+
+**Note:** You can't boost your own aura! Keep it fair and fun! 😊
+"""
+
+__module__ = "Aura"
+
 # Fun aura level descriptions
 def get_aura_level(aura_points):
     if aura_points >= 1000:
-        return "💫 Legendary Aura"
+        return "💫 Legendary"
     elif aura_points >= 500:
-        return "✨ Godlike Aura"
+        return "✨ Godlike"
     elif aura_points >= 250:
-        return "🌟 Supreme Aura"
+        return "🌟 Supreme"
     elif aura_points >= 100:
-        return "⚡ Elite Aura"
+        return "⚡ Elite"
     elif aura_points >= 50:
-        return "🔥 Strong Aura"
+        return "🔥 Strong"
     elif aura_points >= 20:
-        return "💪 Rising Aura"
+        return "💪 Rising"
     elif aura_points >= 0:
-        return "🌱 Growing Aura"
+        return "🌱 Growing"
     else:
-        return "💀 Negative Aura"
+        return "💀 Negative"
 
 # Random positive emojis for variety
 POSITIVE_EMOJIS = ["✨", "⚡", "🔥", "💫", "🌟", "⭐", "🎯", "👑", "💎", "🚀"]
@@ -50,26 +88,95 @@ async def show_top_aura(client: Client, message: Message):
     chat_id = message.chat.id
 
     # Get the top aura users
-    top_users = await aura_db.top_aura(chat_id)
+    top_users = await aura_db.top_aura(chat_id, limit=10)
     if not top_users:
         await message.reply_text("🌑 No aura data available for this group yet. Start spreading positive vibes!")
         return
 
-    # Create fancy leaderboard with medals
-    medals = ["🥇", "🥈", "🥉"]
+    # Show first 5 users
+    medals = ["🥇", "🥈", "🥉", "4.", "5."]
     leaderboard_lines = []
     
-    for i, user in enumerate(top_users):
-        medal = medals[i] if i < 3 else f"**{i + 1}.**"
+    for i in range(min(5, len(top_users))):
+        user = top_users[i]
+        medal = medals[i]
         aura_level = get_aura_level(user['aura'])
-        leaderboard_lines.append(
-            f"{medal} **{user['user_name']}** • {user['aura']} ✨\n   ┗━ {aura_level}"
-        )
+        leaderboard_lines.append(f"{medal} **{user['user_name']}** • {user['aura']} ✨ • {aura_level}")
     
-    leaderboard = "\n\n".join(leaderboard_lines)
+    leaderboard = "\n".join(leaderboard_lines)
+    
+    # Add button if there are more than 5 users
+    keyboard = None
+    if len(top_users) > 5:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 View More", callback_data=f"aura_more_{chat_id}")]
+        ])
+    
     await message.reply_text(
         f"🏆 **TOP AURA LEADERBOARD** 🏆\n\n{leaderboard}\n\n"
-        f"━━━━━━━━━━━━━━━━\n💫 Keep spreading positive vibes!"
+        f"━━━━━━━━━━━━━━━━\n💫 Keep spreading positive vibes!",
+        reply_markup=keyboard
+    )
+
+@app.on_callback_query(filters.regex(r"^aura_more_"))
+async def show_more_aura(client: Client, callback_query: CallbackQuery):
+    """Show remaining top aura users."""
+    chat_id = int(callback_query.data.split("_")[2])
+    
+    # Get the top aura users
+    top_users = await aura_db.top_aura(chat_id, limit=10)
+    
+    # Show users 6-10
+    leaderboard_lines = []
+    for i in range(5, len(top_users)):
+        user = top_users[i]
+        aura_level = get_aura_level(user['aura'])
+        leaderboard_lines.append(f"{i+1}. **{user['user_name']}** • {user['aura']} ✨ • {aura_level}")
+    
+    leaderboard = "\n".join(leaderboard_lines)
+    
+    # Add back button
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Back to Top 5", callback_data=f"aura_back_{chat_id}")]
+    ])
+    
+    await callback_query.message.edit_text(
+        f"🏆 **TOP AURA LEADERBOARD** 🏆\n\n{leaderboard}\n\n"
+        f"━━━━━━━━━━━━━━━━\n💫 Keep spreading positive vibes!",
+        reply_markup=keyboard
+    )
+
+@app.on_callback_query(filters.regex(r"^aura_back_"))
+async def show_back_aura(client: Client, callback_query: CallbackQuery):
+    """Go back to top 5 aura users."""
+    chat_id = int(callback_query.data.split("_")[2])
+    
+    # Get the top aura users
+    top_users = await aura_db.top_aura(chat_id, limit=10)
+    
+    # Show first 5 users
+    medals = ["🥇", "🥈", "🥉", "4.", "5."]
+    leaderboard_lines = []
+    
+    for i in range(min(5, len(top_users))):
+        user = top_users[i]
+        medal = medals[i]
+        aura_level = get_aura_level(user['aura'])
+        leaderboard_lines.append(f"{medal} **{user['user_name']}** • {user['aura']} ✨ • {aura_level}")
+    
+    leaderboard = "\n".join(leaderboard_lines)
+    
+    # Add button if there are more than 5 users
+    keyboard = None
+    if len(top_users) > 5:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 View More", callback_data=f"aura_more_{chat_id}")]
+        ])
+    
+    await callback_query.message.edit_text(
+        f"🏆 **TOP AURA LEADERBOARD** 🏆\n\n{leaderboard}\n\n"
+        f"━━━━━━━━━━━━━━━━\n💫 Keep spreading positive vibes!",
+        reply_markup=keyboard
     )
 
 @app.on_message(
