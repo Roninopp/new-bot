@@ -244,7 +244,11 @@ async def create_welcome_card(user: User, chat_title: str, member_count: int, pr
 
 
 async def send_welcome_message(c: Client, chat_id: int, user: User, chat_obj):
-    """Send welcome message - either card or custom text"""
+    """Send welcome message - either card or custom text
+    
+    NOTE: Bot MUST be an admin in Private Supergroups to receive new_chat_members events.
+    This is a Telegram API limitation for private groups.
+    """
     try:
         db = Greetings(chat_id)
         
@@ -324,7 +328,14 @@ async def send_welcome_message(c: Client, chat_id: int, user: User, chat_obj):
             # Welcome card
             print(f"[WELCOME] Sending welcome card")
             profile_pic_path = await download_profile_pic(user, c)
-            chat_title = chat_obj.title if hasattr(chat_obj, 'title') and chat_obj.title else "this group"
+            
+            # Get chat title - works for both public and private groups
+            chat_title = "this group"
+            if hasattr(chat_obj, 'title') and chat_obj.title:
+                chat_title = chat_obj.title
+            
+            print(f"[WELCOME] Chat title: {chat_title}, Member count: {member_count}")
+            
             welcome_card = await create_welcome_card(user, chat_title, member_count, profile_pic_path)
             
             if welcome_card:
@@ -362,13 +373,26 @@ async def send_welcome_message(c: Client, chat_id: int, user: User, chat_obj):
 
 
 # Handler 1: Manual adds (when admin adds someone)
+# NOTE: Bot MUST be an admin to receive this event in Private Supergroups
 @app.on_message(filters.new_chat_members)
 async def on_new_member_added(c: Client, m: Message):
     print(f"\n[WELCOME] ========== MANUAL ADD EVENT ==========")
-    print(f"[WELCOME] Chat: {m.chat.id} | Type: {m.chat.type} | Title: {m.chat.title}")
+    print(f"[WELCOME] Chat ID: {m.chat.id}")
+    print(f"[WELCOME] Chat Type: {m.chat.type}")
+    print(f"[WELCOME] Chat Username: {m.chat.username if hasattr(m.chat, 'username') else 'None (Private Group)'}")
+    print(f"[WELCOME] Chat Title: {m.chat.title if hasattr(m.chat, 'title') else 'No Title'}")
     
-    # Only process groups and supergroups
+    # Process ALL group types - both public and private
+    # ChatType.GROUP = old-style groups
+    # ChatType.SUPERGROUP = supergroups (both public and private)
+    # ChatType.CHANNEL = channels (sometimes used for private supergroups)
+    if m.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL]:
+        print(f"[WELCOME] Skipping - not a group/supergroup/channel")
+        return
+    
+    # Additional check: Skip if it's actually a private chat somehow
     if m.chat.type == ChatType.PRIVATE:
+        print(f"[WELCOME] Skipping - private chat")
         return
     
     for user in m.new_chat_members:
@@ -376,22 +400,51 @@ async def on_new_member_added(c: Client, m: Message):
         
         # Skip bot itself
         if user.id == c.me.id:
-            print(f"[WELCOME] Skipping bot itself")
+            print(f"[WELCOME] Skipping - it's the bot itself")
             continue
         
         await send_welcome_message(c, m.chat.id, user, m.chat)
 
 
 # Handler 2: Users joining via link (chat_member_updated)
+# NOTE: Bot MUST be an admin to receive this event in Private Supergroups
 @app.on_chat_member_updated()
 async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
     # Skip private chats
     if update.chat.type == ChatType.PRIVATE:
         return
     
+    # Process ALL group types - treat public and private groups the same
+    if update.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL]:
+        return
+    
     # Detect new member joining
     old_member = update.old_chat_member
     new_member = update.new_chat_member
+    
+    # Check if it's actually a new join
+    if old_member or not new_member:
+        return
+    
+    # Check if member actually joined (not kicked, banned, left)
+    if new_member.status not in ["member", "administrator", "creator"]:
+        return
+    
+    user = new_member.user
+    
+    print(f"\n[WELCOME] ========== JOIN VIA LINK EVENT ==========")
+    print(f"[WELCOME] Chat ID: {update.chat.id}")
+    print(f"[WELCOME] Chat Type: {update.chat.type}")
+    print(f"[WELCOME] Chat Username: {update.chat.username if hasattr(update.chat, 'username') else 'None (Private Group)'}")
+    print(f"[WELCOME] Chat Title: {update.chat.title if hasattr(update.chat, 'title') else 'No Title'}")
+    print(f"[WELCOME] New member: {user.first_name} (ID: {user.id})")
+    
+    # Skip bot itself
+    if user.id == c.me.id:
+        print(f"[WELCOME] Skipping - it's the bot itself")
+        return
+    
+    await send_welcome_message(c, update.chat.id, user, update.chat)
     
     # Check if it's actually a new join
     if old_member or not new_member:
