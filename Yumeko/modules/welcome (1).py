@@ -489,8 +489,9 @@ async def on_new_member_added(c: Client, m: Message):
         print(f"[WELCOME DEBUG] Returned from send_welcome_message for user {user.first_name}")
 
 
-# Handler 2: Users joining via link (chat_member_updated)
-# NOTE: Bot MUST be an admin to receive this event in Private Supergroups
+# Handler 2: Users joining (PRIMARY handler for Supergroups)
+# This handler watches the member list DIRECTLY - works even when service messages are hidden
+# NOTE: Bot MUST be an admin to receive chat_member_updated events
 @app.on_chat_member_updated()
 async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
     # CATCH-ALL LOG - This should ALWAYS print if handler is triggered
@@ -502,8 +503,6 @@ async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
     print(f"[WELCOME DEBUG CMU] Chat Title: {update.chat.title if hasattr(update.chat, 'title') else 'NO TITLE'}")
     print(f"[WELCOME DEBUG CMU] Has chat.username? {hasattr(update.chat, 'username')}")
     print(f"[WELCOME DEBUG CMU] Chat Username: {update.chat.username if hasattr(update.chat, 'username') and update.chat.username else 'NO USERNAME (PRIVATE)'}")
-    print(f"[WELCOME DEBUG CMU] Old member: {update.old_chat_member}")
-    print(f"[WELCOME DEBUG CMU] New member: {update.new_chat_member}")
     print(f"{'='*80}\n")
     
     # Skip private chats
@@ -522,23 +521,48 @@ async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
     else:
         print(f"[WELCOME DEBUG CMU] ✓ Chat type {update.chat.type} is allowed")
     
-    # Detect new member joining
+    # Get old and new member info
     old_member = update.old_chat_member
     new_member = update.new_chat_member
     
-    print(f"[WELCOME DEBUG CMU] Old member status: {old_member.status if old_member else 'None'}")
-    print(f"[WELCOME DEBUG CMU] New member status: {new_member.status if new_member else 'None'}")
+    print(f"[WELCOME DEBUG CMU] Member status transition:")
+    print(f"[WELCOME DEBUG CMU] - Old status: {old_member.status if old_member else 'None (brand new)'}")
+    print(f"[WELCOME DEBUG CMU] - New status: {new_member.status if new_member else 'None'}")
     
-    # Check if it's actually a new join
-    print(f"[WELCOME DEBUG CMU] Checking if this is a new join...")
-    if old_member or not new_member:
-        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Not a new join (old_member exists or new_member is None)")
+    # Check if new_member exists
+    if not new_member:
+        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: new_member is None")
         return
-    else:
-        print(f"[WELCOME DEBUG CMU] ✓ This appears to be a new join")
     
-    # Check if member actually joined (not kicked, banned, left)
-    print(f"[WELCOME DEBUG CMU] Checking member status...")
+    # THIS IS THE KEY FIX: Detect if user is JOINING
+    # User is joining if:
+    # 1. old_member doesn't exist (brand new to group) OR
+    # 2. old_member.status was "left"/"kicked"/"restricted" AND new_member.status is now "member"/"administrator"/"creator"
+    
+    is_new_join = False
+    
+    if not old_member:
+        # Brand new member (no previous status)
+        print(f"[WELCOME DEBUG CMU] Scenario: BRAND NEW member (no old status)")
+        is_new_join = True
+    elif old_member.status in ["left", "kicked", "banned", "restricted"]:
+        # User was previously left/kicked and now rejoining
+        print(f"[WELCOME DEBUG CMU] Scenario: User was '{old_member.status}' and is now rejoining")
+        if new_member.status in ["member", "administrator", "creator"]:
+            is_new_join = True
+            print(f"[WELCOME DEBUG CMU] ✓ Status changed from '{old_member.status}' to '{new_member.status}' - THIS IS A JOIN!")
+        else:
+            print(f"[WELCOME DEBUG CMU] ❌ New status '{new_member.status}' is not a member status")
+    else:
+        # User already was a member, this is just a profile/permission update
+        print(f"[WELCOME DEBUG CMU] Scenario: Member update (old: '{old_member.status}' -> new: '{new_member.status}')")
+        print(f"[WELCOME DEBUG CMU] ❌ NOT a join event (user was already a member)")
+    
+    if not is_new_join:
+        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Not a join event")
+        return
+    
+    # Additional safety check: new member status must be active
     if new_member.status not in ["member", "administrator", "creator"]:
         print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Status '{new_member.status}' not in allowed statuses")
         return
@@ -550,6 +574,7 @@ async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
     print(f"[WELCOME DEBUG CMU] User details:")
     print(f"[WELCOME DEBUG CMU] - Name: {user.first_name}")
     print(f"[WELCOME DEBUG CMU] - ID: {user.id}")
+    print(f"[WELCOME DEBUG CMU] - is_bot: {user.is_bot}")
     print(f"[WELCOME DEBUG CMU] - Bot's ID: {c.me.id}")
     
     # Skip bot itself
@@ -559,6 +584,7 @@ async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
     else:
         print(f"[WELCOME DEBUG CMU] ✓ User is not the bot")
     
+    print(f"[WELCOME DEBUG CMU] ✓✓✓ ALL CHECKS PASSED - PROCEEDING TO SEND WELCOME!")
     print(f"[WELCOME DEBUG CMU] Calling send_welcome_message...")
     await send_welcome_message(c, update.chat.id, user, update.chat)
     print(f"[WELCOME DEBUG CMU] Returned from send_welcome_message")
