@@ -1,4 +1,5 @@
 import asyncio
+import random
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait
@@ -8,6 +9,117 @@ import config
 
 # Store active mention processes
 active_mentions = {}
+
+# Cool emoji list for mentions
+MENTION_EMOJIS = [
+    "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃",
+    "😉", "😊", "😇", "🥰", "😍", "🤩", "😘", "😗", "😚", "😙",
+    "🥲", "😋", "😛", "😜", "🤪", "😝", "🤑", "🤗", "🤭", "🤫",
+    "🤔", "🤐", "🤨", "😐", "😑", "😶", "😏", "😒", "🙄", "😬",
+    "🤥", "😌", "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕", "🤢",
+    "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "🥸",
+    "😎", "🤓", "🧐", "😕", "😟", "🙁", "☹️", "😮", "😯", "😲",
+    "😳", "🥺", "😦", "😧", "😨", "😰", "😥", "😢", "😭", "😱",
+    "😖", "😣", "😞", "😓", "😩", "😫", "🥱", "😤", "😡", "😠",
+    "🤬", "😈", "👿", "💀", "☠️", "💩", "🤡", "👹", "👺", "👻",
+    "👽", "👾", "🤖", "😺", "😸", "😹", "😻", "😼", "😽", "🙀",
+    "😿", "😾", "🙈", "🙉", "🙊", "💋", "💌", "💘", "💝", "💖",
+    "💗", "💓", "💞", "💕", "💟", "❣️", "💔", "❤️", "🧡", "💛",
+    "💚", "💙", "💜", "🤎", "🖤", "🤍", "💯", "💢", "💥", "💫",
+    "💦", "💨", "🕳️", "💣", "💬", "👁️", "🗨️", "🗯️", "💭", "💤",
+    "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞",
+    "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍",
+    "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝",
+    "🙏", "✍️", "💅", "🤳", "💪", "🦾", "🦿", "🦵", "🦶", "👂",
+    "🦻", "👃", "🧠", "🫀", "🫁", "🦷", "🦴", "👀", "👁️", "👅",
+    "👄", "🧑", "👶", "🧒", "👦", "👧", "🧑", "👨", "👩", "🧔",
+    "🧑‍🦰", "👨‍🦰", "👩‍🦰", "🧑‍🦱", "👨‍🦱", "👩‍🦱", "🧑‍🦳", "👨‍🦳", "👩‍🦳", "🧑‍🦲",
+    "👨‍🦲", "👩‍🦲", "👱", "👱‍♂️", "👱‍♀️", "🧔", "🧔‍♂️", "🧔‍♀️", "👴", "👵",
+    "🙍", "🙍‍♂️", "🙍‍♀️", "🙎", "🙎‍♂️", "🙎‍♀️", "🙅", "🙅‍♂️", "🙅‍♀️", "🙆",
+    "🙆‍♂️", "🙆‍♀️", "💁", "💁‍♂️", "💁‍♀️", "🙋", "🙋‍♂️", "🙋‍♀️", "🧏", "🧏‍♂️",
+    "🧏‍♀️", "🙇", "🙇‍♂️", "🙇‍♀️", "🤦", "🤦‍♂️", "🤦‍♀️", "🤷", "🤷‍♂️", "🤷‍♀️",
+    "🧑‍⚕️", "👨‍⚕️", "👩‍⚕️", "🧑‍🎓", "👨‍🎓", "👩‍🎓", "🧑‍🏫", "👨‍🏫", "👩‍🏫", "🧑‍⚖️",
+    "👨‍⚖️", "👩‍⚖️", "🧑‍🌾", "👨‍🌾", "👩‍🌾", "🧑‍🍳", "👨‍🍳", "👩‍🍳", "🧑‍🔧", "👨‍🔧",
+    "👩‍🔧", "🧑‍🏭", "👨‍🏭", "👩‍🏭", "🧑‍💼", "👨‍💼", "👩‍💼", "🧑‍🔬", "👨‍🔬", "👩‍🔬",
+    "🧑‍💻", "👨‍💻", "👩‍💻", "🧑‍🎤", "👨‍🎤", "👩‍🎤", "🧑‍🎨", "👨‍🎨", "👩‍🎨", "🧑‍✈️",
+    "👨‍✈️", "👩‍✈️", "🧑‍🚀", "👨‍🚀", "👩‍🚀", "🧑‍🚒", "👨‍🚒", "👩‍🚒", "👮", "👮‍♂️",
+    "👮‍♀️", "🕵️", "🕵️‍♂️", "🕵️‍♀️", "💂", "💂‍♂️", "💂‍♀️", "🥷", "👷", "👷‍♂️",
+    "👷‍♀️", "🤴", "👸", "👳", "👳‍♂️", "👳‍♀️", "👲", "🧕", "🤵", "🤵‍♂️",
+    "🤵‍♀️", "👰", "👰‍♂️", "👰‍♀️", "🤰", "🤱", "👩‍🍼", "👨‍🍼", "🧑‍🍼", "👼",
+    "🎅", "🤶", "🧑‍🎄", "🦸", "🦸‍♂️", "🦸‍♀️", "🦹", "🦹‍♂️", "🦹‍♀️", "🧙",
+    "🧙‍♂️", "🧙‍♀️", "🧚", "🧚‍♂️", "🧚‍♀️", "🧛", "🧛‍♂️", "🧛‍♀️", "🧜", "🧜‍♂️",
+    "🧜‍♀️", "🧝", "🧝‍♂️", "🧝‍♀️", "🧞", "🧞‍♂️", "🧞‍♀️", "🧟", "🧟‍♂️", "🧟‍♀️",
+    "💆", "💆‍♂️", "💆‍♀️", "💇", "💇‍♂️", "💇‍♀️", "🚶", "🚶‍♂️", "🚶‍♀️", "🧍",
+    "🧍‍♂️", "🧍‍♀️", "🧎", "🧎‍♂️", "🧎‍♀️", "🧑‍🦯", "👨‍🦯", "👩‍🦯", "🧑‍🦼", "👨‍🦼",
+    "👩‍🦼", "🧑‍🦽", "👨‍🦽", "👩‍🦽", "🏃", "🏃‍♂️", "🏃‍♀️", "💃", "🕺", "🕴️",
+    "👯", "👯‍♂️", "👯‍♀️", "🧖", "🧖‍♂️", "🧖‍♀️", "🧗", "🧗‍♂️", "🧗‍♀️", "🤺",
+    "🏇", "⛷️", "🏂", "🏌️", "🏌️‍♂️", "🏌️‍♀️", "🏄", "🏄‍♂️", "🏄‍♀️", "🚣",
+    "🚣‍♂️", "🚣‍♀️", "🏊", "🏊‍♂️", "🏊‍♀️", "⛹️", "⛹️‍♂️", "⛹️‍♀️", "🏋️", "🏋️‍♂️",
+    "🏋️‍♀️", "🚴", "🚴‍♂️", "🚴‍♀️", "🚵", "🚵‍♂️", "🚵‍♀️", "🤸", "🤸‍♂️", "🤸‍♀️",
+    "🤼", "🤼‍♂️", "🤼‍♀️", "🤽", "🤽‍♂️", "🤽‍♀️", "🤾", "🤾‍♂️", "🤾‍♀️", "🤹",
+    "🤹‍♂️", "🤹‍♀️", "🧘", "🧘‍♂️", "🧘‍♀️", "🛀", "🛌", "🧑‍🤝‍🧑", "👭", "👫",
+    "👬", "💏", "👩‍❤️‍💋‍👨", "👨‍❤️‍💋‍👨", "👩‍❤️‍💋‍👩", "💑", "👩‍❤️‍👨", "👨‍❤️‍👨", "👩‍❤️‍👩", "👪",
+    "👨‍👩‍👦", "👨‍👩‍👧", "👨‍👩‍👧‍👦", "👨‍👩‍👦‍👦", "👨‍👩‍👧‍👧", "👨‍👨‍👦", "👨‍👨‍👧", "👨‍👨‍👧‍👦", "👨‍👨‍👦‍👦", "👨‍👨‍👧‍👧",
+    "👩‍👩‍👦", "👩‍👩‍👧", "👩‍👩‍👧‍👦", "👩‍👩‍👦‍👦", "👩‍👩‍👧‍👧", "👨‍👦", "👨‍👦‍👦", "👨‍👧", "👨‍👧‍👦", "👨‍👧‍👧",
+    "👩‍👦", "👩‍👦‍👦", "👩‍👧", "👩‍👧‍👦", "👩‍👧‍👧", "🗣️", "👤", "👥", "🫂", "👣",
+    "🐵", "🐒", "🦍", "🦧", "🐶", "🐕", "🦮", "🐕‍🦺", "🐩", "🐺",
+    "🦊", "🦝", "🐱", "🐈", "🐈‍⬛", "🦁", "🐯", "🐅", "🐆", "🐴",
+    "🐎", "🦄", "🦓", "🦌", "🦬", "🐮", "🐂", "🐃", "🐄", "🐷",
+    "🐖", "🐗", "🐽", "🐏", "🐑", "🐐", "🐪", "🐫", "🦙", "🦒",
+    "🐘", "🦣", "🦏", "🦛", "🐭", "🐁", "🐀", "🐹", "🐰", "🐇",
+    "🐿️", "🦫", "🦔", "🦇", "🐻", "🐻‍❄️", "🐨", "🐼", "🦥", "🦦",
+    "🦨", "🦘", "🦡", "🐾", "🦃", "🐔", "🐓", "🐣", "🐤", "🐥",
+    "🐦", "🐧", "🕊️", "🦅", "🦆", "🦢", "🦉", "🦤", "🪶", "🦩",
+    "🦚", "🦜", "🐸", "🐊", "🐢", "🦎", "🐍", "🐲", "🐉", "🦕",
+    "🦖", "🐳", "🐋", "🐬", "🦭", "🐟", "🐠", "🐡", "🦈", "🐙",
+    "🐚", "🐌", "🦋", "🐛", "🐜", "🐝", "🪲", "🐞", "🦗", "🪳",
+    "🕷️", "🕸️", "🦂", "🦟", "🪰", "🪱", "🦠", "💐", "🌸", "💮",
+    "🏵️", "🌹", "🥀", "🌺", "🌻", "🌼", "🌷", "🌱", "🪴", "🌲",
+    "🌳", "🌴", "🌵", "🌾", "🌿", "☘️", "🍀", "🍁", "🍂", "🍃",
+    "🍇", "🍈", "🍉", "🍊", "🍋", "🍌", "🍍", "🥭", "🍎", "🍏",
+    "🍐", "🍑", "🍒", "🍓", "🫐", "🥝", "🍅", "🫒", "🥥", "🥑",
+    "🍆", "🥔", "🥕", "🌽", "🌶️", "🫑", "🥒", "🥬", "🥦", "🧄",
+    "🧅", "🍄", "🥜", "🌰", "🍞", "🥐", "🥖", "🫓", "🥨", "🥯",
+    "🥞", "🧇", "🧀", "🍖", "🍗", "🥩", "🥓", "🍔", "🍟", "🍕",
+    "🌭", "🥪", "🌮", "🌯", "🫔", "🥙", "🧆", "🥚", "🍳", "🥘",
+    "🍲", "🫕", "🥣", "🥗", "🍿", "🧈", "🧂", "🥫", "🍱", "🍘",
+    "🍙", "🍚", "🍛", "🍜", "🍝", "🍠", "🍢", "🍣", "🍤", "🍥",
+    "🥮", "🍡", "🥟", "🥠", "🥡", "🦀", "🦞", "🦐", "🦑", "🦪",
+    "🍦", "🍧", "🍨", "🍩", "🍪", "🎂", "🍰", "🧁", "🥧", "🍫",
+    "🍬", "🍭", "🍮", "🍯", "🍼", "🥛", "☕", "🫖", "🍵", "🍶",
+    "🍾", "🍷", "🍸", "🍹", "🍺", "🍻", "🥂", "🥃", "🥤", "🧋",
+    "🧃", "🧉", "🧊", "🥢", "🍽️", "🍴", "🥄", "🔪", "🏺", "🌍",
+    "🌎", "🌏", "🌐", "🗺️", "🗾", "🧭", "🏔️", "⛰️", "🌋", "🗻",
+    "🏕️", "🏖️", "🏜️", "🏝️", "🏞️", "🏟️", "🏛️", "🏗️", "🧱", "🪨",
+    "🪵", "🛖", "🏘️", "🏚️", "🏠", "🏡", "🏢", "🏣", "🏤", "🏥",
+    "🏦", "🏨", "🏩", "🏪", "🏫", "🏬", "🏭", "🏯", "🏰", "💒",
+    "🗼", "🗽", "⛪", "🕌", "🛕", "🕍", "⛩️", "🕋", "⛲", "⛺",
+    "🌁", "🌃", "🏙️", "🌄", "🌅", "🌆", "🌇", "🌉", "♨️", "🎠",
+    "🎡", "🎢", "💈", "🎪", "🚂", "🚃", "🚄", "🚅", "🚆", "🚇",
+    "🚈", "🚉", "🚊", "🚝", "🚞", "🚋", "🚌", "🚍", "🚎", "🚐",
+    "🚑", "🚒", "🚓", "🚔", "🚕", "🚖", "🚗", "🚘", "🚙", "🛻",
+    "🚚", "🚛", "🚜", "🏎️", "🏍️", "🛵", "🦽", "🦼", "🛺", "🚲",
+    "🛴", "🛹", "🛼", "🚏", "🛣️", "🛤️", "🛢️", "⛽", "🚨", "🚥",
+    "🚦", "🛑", "🚧", "⚓", "⛵", "🛶", "🚤", "🛳️", "⛴️", "🛥️",
+    "🚢", "✈️", "🛩️", "🛫", "🛬", "🪂", "💺", "🚁", "🚟", "🚠",
+    "🚡", "🛰️", "🚀", "🛸", "🛎️", "🧳", "⌛", "⏳", "⌚", "⏰",
+    "⏱️", "⏲️", "🕰️", "🕛", "🕧", "🕐", "🕜", "🕑", "🕝", "🕒",
+    "🕞", "🕓", "🕟", "🕔", "🕠", "🕕", "🕡", "🕖", "🕢", "🕗",
+    "🕣", "🕘", "🕤", "🕙", "🕥", "🕚", "🕦", "🌑", "🌒", "🌓",
+    "🌔", "🌕", "🌖", "🌗", "🌘", "🌙", "🌚", "🌛", "🌜", "🌡️",
+    "☀️", "🌝", "🌞", "🪐", "⭐", "🌟", "🌠", "🌌", "☁️", "⛅",
+    "⛈️", "🌤️", "🌥️", "🌦️", "🌧️", "🌨️", "🌩️", "🌪️", "🌫️", "🌬️",
+    "🌀", "🌈", "🌂", "☂️", "☔", "⛱️", "⚡", "❄️", "☃️", "⛄",
+    "☄️", "🔥", "💧", "🌊", "🎃", "🎄", "🎆", "🎇", "🧨", "✨",
+    "🎈", "🎉", "🎊", "🎋", "🎍", "🎎", "🎏", "🎐", "🎑", "🧧",
+    "🎀", "🎁", "🎗️", "🎟️", "🎫", "🎖️", "🏆", "🏅", "🥇", "🥈",
+    "🥉", "⚽", "⚾", "🥎", "🏀", "🏐", "🏈", "🏉", "🎾", "🥏",
+    "🎳", "🏏", "🏑", "🏒", "🥍", "🏓", "🏸", "🥊", "🥋", "🥅",
+    "⛳", "⛸️", "🎣", "🤿", "🎽", "🎿", "🛷", "🥌", "🎯", "🪀",
+    "🪁", "🎱", "🔮", "🪄", "🧿", "🎮", "🕹️", "🎰", "🎲", "🧩",
+    "🧸", "🪅", "🪆", "♠️", "♥️", "♦️", "♣️", "♟️", "🃏", "🀄",
+    "🎴", "🎭", "🖼️", "🎨", "🧵", "🪡", "🧶", "🪢"
+]
 
 async def is_admin(client: Client, chat_id: int, user_id: int) -> bool:
     """Check if user is admin or owner"""
@@ -32,7 +144,7 @@ async def get_members(client: Client, chat_id: int, limit: int = 200):
     return members
 
 async def mention_users(client: Client, message: Message, members: list, text: str, mode: str = "normal"):
-    """Mention users with different modes"""
+    """Mention users with random emojis and different modes"""
     chat_id = message.chat.id
     mentioned_count = 0
     
@@ -50,7 +162,12 @@ async def mention_users(client: Client, message: Message, members: list, text: s
             break
             
         batch = members[i:i + batch_size]
-        mentions = " ".join([f"[{user.first_name}](tg://user?id={user.id})" for user in batch])
+        
+        # Create mentions with random emojis for each user
+        mentions = " ".join([
+            f"{random.choice(MENTION_EMOJIS)}[{user.first_name}](tg://user?id={user.id})" 
+            for user in batch
+        ])
         
         try:
             if text:
@@ -72,7 +189,7 @@ async def mention_users(client: Client, message: Message, members: list, text: s
 
 @app.on_message(filters.command("tagall", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def tagall(client: Client, message: Message):
-    """Tag all members in the group"""
+    """Tag all members in the group with random emojis"""
     chat_id = message.chat.id
     
     # Check if user is admin or owner
@@ -96,42 +213,6 @@ async def tagall(client: Client, message: Message):
         await status_msg.edit_text("**❌ No members found!**")
         return
     
-    await status_msg.edit_text(f"**👥 Found {len(members)} members!**\n**🏷️ Starting mention process...**")
-    
-    # Mark as active
-    active_mentions[chat_id] = True
-    
-    # Start mentioning
-    mentioned = await mention_users(client, message, members, text, mode="normal")
-    
-    # Remove from active
-    if chat_id in active_mentions:
-        del active_mentions[chat_id]
-    
-    await status_msg.edit_text(f"**✅ Mentioned {mentioned} members successfully!**")
-
-@app.on_message(filters.command("fastag", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
-async def fastag(client: Client, message: Message):
-    """Fast tag all members (10 per message)"""
-    chat_id = message.chat.id
-    
-    if not await is_admin(client, chat_id, message.from_user.id):
-        await message.reply_text("**❌ Only admins can use this command!**")
-        return
-    
-    if chat_id in active_mentions:
-        await message.reply_text("**⚠️ A mention process is already running! Use /cancel to stop it.**")
-        return
-    
-    text = " ".join(message.command[1:]) if len(message.command) > 1 else "⚡ **Fast Mention!**"
-    
-    status_msg = await message.reply_text("**🔍 Fetching members...**")
-    members = await get_members(client, chat_id)
-    
-    if not members:
-        await status_msg.edit_text("**❌ No members found!**")
-        return
-    
     await status_msg.edit_text(f"**👥 Found {len(members)} members!**\n**⚡ Starting fast mention...**")
     
     active_mentions[chat_id] = True
@@ -144,7 +225,7 @@ async def fastag(client: Client, message: Message):
 
 @app.on_message(filters.command("singletag", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def singletag(client: Client, message: Message):
-    """Tag members one by one (slow but spam-safe)"""
+    """Tag members one by one with random emojis (slow but spam-safe)"""
     chat_id = message.chat.id
     
     if not await is_admin(client, chat_id, message.from_user.id):
@@ -191,7 +272,7 @@ async def cancel_mention(client: Client, message: Message):
 
 @app.on_message(filters.command("admintag", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def admintag(client: Client, message: Message):
-    """Tag only admins in the group"""
+    """Tag only admins in the group with random emojis"""
     chat_id = message.chat.id
     
     if not await is_admin(client, chat_id, message.from_user.id):
@@ -202,7 +283,7 @@ async def admintag(client: Client, message: Message):
     
     status_msg = await message.reply_text("**🔍 Fetching admins...**")
     
-    # Get admins - Fixed: Use ChatMembersFilter.ADMINISTRATORS
+    # Get admins
     admins = []
     try:
         async for admin in client.get_chat_members(chat_id, filter=ChatMembersFilter.ADMINISTRATORS):
@@ -216,8 +297,11 @@ async def admintag(client: Client, message: Message):
         await status_msg.edit_text("**❌ No admins found!**")
         return
     
-    # Mention all admins in one message
-    mentions = " ".join([f"[{admin.first_name}](tg://user?id={admin.id})" for admin in admins])
+    # Mention all admins with random emojis in one message
+    mentions = " ".join([
+        f"{random.choice(MENTION_EMOJIS)}[{admin.first_name}](tg://user?id={admin.id})" 
+        for admin in admins
+    ])
     
     msg_text = f"{text}\n\n{mentions}"
     
@@ -226,7 +310,7 @@ async def admintag(client: Client, message: Message):
 
 @app.on_message(filters.command("botstag", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
 async def botstag(client: Client, message: Message):
-    """Tag all bots in the group"""
+    """Tag all bots in the group with random emojis"""
     chat_id = message.chat.id
     
     if not await is_admin(client, chat_id, message.from_user.id):
@@ -250,8 +334,11 @@ async def botstag(client: Client, message: Message):
         await status_msg.edit_text("**❌ No bots found!**")
         return
     
-    # Mention all bots in one message
-    mentions = " ".join([f"[{bot.first_name}](tg://user?id={bot.id})" for bot in bots])
+    # Mention all bots with random emojis in one message
+    mentions = " ".join([
+        f"{random.choice(MENTION_EMOJIS)}[{bot.first_name}](tg://user?id={bot.id})" 
+        for bot in bots
+    ])
     
     msg_text = f"{text}\n\n{mentions}"
     
@@ -261,17 +348,18 @@ async def botstag(client: Client, message: Message):
 __help__ = """
 **📢 Mention All Module:**
 
-Tag/mention members in your group with various modes!
+Tag/mention members in your group with cool random emojis! 😎
 
 **Commands:**
-• `/tagall [text]` - Tag all members (5 per message)
-• `/fastag [text]` - Fast tag (10 per message)
-• `/singletag [text]` - Tag one by one (spam-safe)
-• `/admintag [text]` - Tag only admins
-• `/botstag [text]` - Tag all bots
+• `/tagall [text]` - Tag all members with emojis (5 per message)
+• `/fastag [text]` - Fast tag with emojis (10 per message)
+• `/singletag [text]` - Tag one by one with emojis (spam-safe)
+• `/admintag [text]` - Tag only admins with emojis
+• `/botstag [text]` - Tag all bots with emojis
 • `/cancel` - Cancel ongoing mention process
 
 **Features:**
+• 🎨 Random emoji for each user mention!
 • Multiple tagging modes for different needs
 • Admin + Owner access (both work!)
 • Flood protection built-in
@@ -284,6 +372,43 @@ Tag/mention members in your group with various modes!
 `/admintag Need admin help here`
 
 **Note:** Only group admins and owners can use these commands.
+Each user gets a random emoji when mentioned! 🎉
 """
 
-__module__ = "Mention All"
+__module__ = "Mention All"edit_text("**❌ No members found!**")
+        return
+    
+    await status_msg.edit_text(f"**👥 Found {len(members)} members!**\n**🏷️ Starting mention process...**")
+    
+    # Mark as active
+    active_mentions[chat_id] = True
+    
+    # Start mentioning
+    mentioned = await mention_users(client, message, members, text, mode="normal")
+    
+    # Remove from active
+    if chat_id in active_mentions:
+        del active_mentions[chat_id]
+    
+    await status_msg.edit_text(f"**✅ Mentioned {mentioned} members successfully!**")
+
+@app.on_message(filters.command("fastag", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
+async def fastag(client: Client, message: Message):
+    """Fast tag all members with random emojis (10 per message)"""
+    chat_id = message.chat.id
+    
+    if not await is_admin(client, chat_id, message.from_user.id):
+        await message.reply_text("**❌ Only admins can use this command!**")
+        return
+    
+    if chat_id in active_mentions:
+        await message.reply_text("**⚠️ A mention process is already running! Use /cancel to stop it.**")
+        return
+    
+    text = " ".join(message.command[1:]) if len(message.command) > 1 else "⚡ **Fast Mention!**"
+    
+    status_msg = await message.reply_text("**🔍 Fetching members...**")
+    members = await get_members(client, chat_id)
+    
+    if not members:
+        await status_msg.
