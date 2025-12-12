@@ -81,7 +81,7 @@ async def mention_users(client: Client, message: Message, members: list, text: s
         if chat_id not in active_mentions:
             break
         batch = members[i:i + batch_size]
-        mentions = " ".join([f"{random.choice(MENTION_EMOJIS)}[{user.first_name}](tg://user?id={user.id})" for user in batch])
+        mentions = " ".join([f"[{random.choice(MENTION_EMOJIS)}](tg://user?id={user.id})" for user in batch])
         try:
             msg_text = f"{text}\n\n{mentions}" if text else mentions
             await client.send_message(chat_id, msg_text)
@@ -191,7 +191,7 @@ async def admintag(client: Client, message: Message):
     if not admins:
         await status_msg.edit_text("**❌ No admins found!**")
         return
-    mentions = " ".join([f"{random.choice(MENTION_EMOJIS)}[{admin.first_name}](tg://user?id={admin.id})" for admin in admins])
+    mentions = " ".join([f"[{random.choice(MENTION_EMOJIS)}](tg://user?id={admin.id})" for admin in admins])
     msg_text = f"{text}\n\n{mentions}"
     await message.reply_text(msg_text)
     await status_msg.delete()
@@ -214,7 +214,7 @@ async def botstag(client: Client, message: Message):
     if not bots:
         await status_msg.edit_text("**❌ No bots found!**")
         return
-    mentions = " ".join([f"{random.choice(MENTION_EMOJIS)}[{bot.first_name}](tg://user?id={bot.id})" for bot in bots])
+    mentions = " ".join([f"[{random.choice(MENTION_EMOJIS)}](tg://user?id={bot.id})" for bot in bots])
     msg_text = f"{text}\n\n{mentions}"
     await message.reply_text(msg_text)
     await status_msg.delete()
