@@ -19,7 +19,6 @@ pillow
 psutil
 pyjokes
 pytz
-pyrofork
 python-arq
 python-telegram-bot
 requests
