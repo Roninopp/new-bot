@@ -55,7 +55,7 @@ log = logging.getLogger(__name__)
 class App(Client):
     def __init__(self):
         super().__init__(
-            session_name=Yumeko,
+            session_name="Yumeko",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             bot_token=config.BOT_TOKEN,
