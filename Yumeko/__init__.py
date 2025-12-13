@@ -55,11 +55,13 @@ log = logging.getLogger(__name__)
 class App(Client):
     def __init__(self):
         super().__init__(
-            session_name="Yumeko",
+            name="Yumeko",  # Change 'session_name' back to 'name'
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             bot_token=config.BOT_TOKEN,
-            workers=config.WORKERS
+            workers=config.WORKERS,
+            max_concurrent_transmissions=config.MAX_CONCURRENT_TRANSMISSIONS, # Restore this
+            max_message_cache_size=config.MAX_MESSAGE_CACHE_SIZE,             # Restore this
         )
 
 
