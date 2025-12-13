@@ -5,8 +5,12 @@ from typing import Callable
 from pyrogram import Client
 from Yumeko import app
 from config import config
-from pyrogram.enums import ChatType
-
+# Fake ChatType for Pyrogram v1.4.16 compatibility
+class ChatType:
+    PRIVATE = "private"
+    GROUP = "group"
+    SUPERGROUP = "supergroup"
+    CHANNEL = "channel"
 def save(func: Callable):
     @wraps(func)
     async def wrapper(client: Client, update, *args, **kwargs):
