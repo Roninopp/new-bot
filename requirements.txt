@@ -35,3 +35,5 @@ yt-dlp
 youtube-search
 youtube-search-python
 beautifulsoup4
+Pyrogram==1.4.16
+TgCrypto
