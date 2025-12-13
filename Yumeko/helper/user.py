@@ -1,11 +1,10 @@
-from Yumeko import app , admin_cache_ptb , ptb
-from pyrogram.errors import RPCError
+from Yumeko import app, admin_cache_ptb, ptb
+from pyrogram.errors import RPCError, PeerIdInvalid
 from pyrogram.enums import MessageEntityType
-from pyrogram.types import Message , ChatPrivileges , ChatPermissions
-from pyrogram.errors import PeerIdInvalid
+from pyrogram.types import Message, ChatPrivileges, ChatPermissions
 from telegram import Update, ChatMember
-from telegram.ext import ContextTypes 
-from telegram.error import BadRequest , Forbidden
+from telegram.ext import ContextTypes
+from telegram.error import BadRequest, Forbidden
 from threading import RLock
 from time import perf_counter
 from cachetools import TTLCache
@@ -47,50 +46,49 @@ async def resolve_user(client: app, message: Message):  # type: ignore
         return None
 
 # --- FIXED PRIVILEGES (Admins) ---
-# Removed 'stories' arguments which were causing crashes
 DEMOTE = ChatPrivileges(
-    can_delete_messages = False,
-    can_manage_video_chats = False,
-    can_restrict_members = False,
-    can_promote_members = False,
-    can_change_info = False,
-    can_edit_messages = False,
-    can_invite_users = False,
-    can_pin_messages = False,
-    is_anonymous = False
+    can_delete_messages=False,
+    can_manage_video_chats=False,
+    can_restrict_members=False,
+    can_promote_members=False,
+    can_change_info=False,
+    can_edit_messages=False,
+    can_invite_users=False,
+    can_pin_messages=False,
+    is_anonymous=False
 )
 
 PROMOTE = ChatPrivileges(
-    can_delete_messages = True,
-    can_manage_video_chats = True,
-    can_restrict_members = False,
-    can_promote_members = False,
-    can_change_info = False,
-    can_invite_users = True,
-    can_pin_messages = True,
-    is_anonymous = False
+    can_delete_messages=True,
+    can_manage_video_chats=True,
+    can_restrict_members=False,
+    can_promote_members=False,
+    can_change_info=False,
+    can_invite_users=True,
+    can_pin_messages=True,
+    is_anonymous=False
 )
 
 FULLPROMOTE = ChatPrivileges(
-    can_delete_messages = True,
-    can_manage_video_chats = True,
-    can_restrict_members = True,
-    can_promote_members = True,
-    can_change_info = True,
-    can_invite_users = True,
-    can_pin_messages = True,
-    is_anonymous = False
+    can_delete_messages=True,
+    can_manage_video_chats=True,
+    can_restrict_members=True,
+    can_promote_members=True,
+    can_change_info=True,
+    can_invite_users=True,
+    can_pin_messages=True,
+    is_anonymous=False
 )
 
 LOWPROMOTE = ChatPrivileges(
-    can_delete_messages = False,
-    can_manage_video_chats = False,
-    can_restrict_members = False,
-    can_promote_members = False,
-    can_change_info = False,
-    can_invite_users = True,
-    can_pin_messages = True,
-    is_anonymous = False
+    can_delete_messages=False,
+    can_manage_video_chats=False,
+    can_restrict_members=False,
+    can_promote_members=False,
+    can_change_info=False,
+    can_invite_users=True,
+    can_pin_messages=True,
+    is_anonymous=False
 )
 
 async def resolve_user_for_afk(client: app, message: Message):  # type: ignore
@@ -128,13 +126,11 @@ async def resolve_user_for_afk(client: app, message: Message):  # type: ignore
         return None
 
 # --- FIXED PERMISSIONS (Users) ---
-# Replaced specific media types (docs, photos, audios) with 'can_send_media_messages'
-# Replaced games, gifs, stickers with 'can_send_other_messages'
+# [cite_start]Removed 'can_send_other_messages' to fix the crash [cite: 14, 16]
 
 MUTE = ChatPermissions(
     can_send_messages=False,
     can_send_media_messages=False,
-    can_send_other_messages=False,
     can_send_polls=False,
     can_add_web_page_previews=False,
     can_invite_users=False,
@@ -145,7 +141,6 @@ MUTE = ChatPermissions(
 UNMUTE = ChatPermissions(
     can_send_messages=True,
     can_send_media_messages=True,
-    can_send_other_messages=True,
     can_send_polls=True,
     can_add_web_page_previews=True,
     can_invite_users=True,
@@ -156,7 +151,6 @@ UNMUTE = ChatPermissions(
 RESTRICT = ChatPermissions(
     can_send_messages=True,
     can_send_media_messages=False,
-    can_send_other_messages=False,
     can_send_polls=False,
     can_add_web_page_previews=False,
     can_invite_users=True,
@@ -217,11 +211,9 @@ async def has_admin_right(update: Update, context: ContextTypes.DEFAULT_TYPE, us
     return admin_cache_ptb.get(cache_key, False)
 
 # --- FIXED NIGHT MODE PERMISSIONS ---
-# Removed all deprecated fields (docs, audio, gifs, topics, etc.)
 NIGHT_MODE_PERMISSIONS = ChatPermissions(
     can_send_messages=True,
     can_send_media_messages=False,
-    can_send_other_messages=False,
     can_send_polls=False,
     can_add_web_page_previews=False,
     can_invite_users=False,
@@ -232,7 +224,6 @@ NIGHT_MODE_PERMISSIONS = ChatPermissions(
 DEFAULT_PERMISSIONS = ChatPermissions(
     can_send_messages=True,
     can_send_media_messages=True,
-    can_send_other_messages=True,
     can_send_polls=True,
     can_add_web_page_previews=True,
     can_invite_users=True,
