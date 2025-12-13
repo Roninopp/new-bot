@@ -59,9 +59,7 @@ class App(Client):
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             bot_token=config.BOT_TOKEN,
-            workers=config.WORKERS,
-            max_concurrent_transmissions=config.MAX_CONCURRENT_TRANSMISSIONS,
-            max_message_cache_size=config.MAX_MESSAGE_CACHE_SIZE,
+            workers=config.WORKERS
         )
 
 
