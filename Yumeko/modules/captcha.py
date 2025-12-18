@@ -1,23 +1,13 @@
 import asyncio
 import random
-import time
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ChatPermissions
-from pyrogram.enums import ChatMemberStatus
+from pyrogram.enums import ChatMemberStatus, ChatType
 from Yumeko import app
-from Yumeko.database import db
 import config
 
-# Captcha storage
-captcha_data = {}
-pending_users = {}
-
-# Captcha types
-CAPTCHA_TYPES = {
-    "math": "Math Question",
-    "button": "Button Click",
-    "emoji": "Emoji Selection"
-}
+# Store pending verifications
+pending_verifications = {}
 
 async def is_admin(client: Client, chat_id: int, user_id: int) -> bool:
     """Check if user is admin or owner"""
@@ -27,47 +17,50 @@ async def is_admin(client: Client, chat_id: int, user_id: int) -> bool:
     except:
         return False
 
-async def get_captcha_settings(chat_id: int):
-    """Get captcha settings for a chat"""
-    data = await db.captcha.find_one({"chat_id": chat_id})
-    if not data:
-        return {
-            "enabled": False,
-            "type": "button",
-            "timeout": 120,
-            "action": "kick"
-        }
-    return data
+# Simple in-memory storage for captcha status
+captcha_enabled_chats = set()
 
-async def save_captcha_settings(chat_id: int, settings: dict):
-    """Save captcha settings"""
-    await db.captcha.update_one(
-        {"chat_id": chat_id},
-        {"$set": settings},
-        upsert=True
-    )
-
-def generate_math_captcha():
-    """Generate a simple math question"""
-    num1 = random.randint(1, 20)
-    num2 = random.randint(1, 20)
-    operations = ['+', '-', '×']
-    op = random.choice(operations)
+@app.on_message(filters.command("captcha", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
+async def captcha_toggle(client: Client, message: Message):
+    """Enable or disable captcha verification"""
+    chat_id = message.chat.id
     
-    if op == '+':
-        answer = num1 + num2
-        question = f"{num1} + {num2}"
-    elif op == '-':
-        # Ensure positive result
-        if num1 < num2:
-            num1, num2 = num2, num1
-        answer = num1 - num2
-        question = f"{num1} - {num2}"
-    else:  # multiplication
-        num1 = random.randint(1, 10)
-        num2 = random.randint(1, 10)
-        answer = num1 * num2
-        question = f"{num1} × {num2}"
+    if not await is_admin(client, chat_id, message.from_user.id):
+        await message.reply_text("**❌ Only admins can use this command!**")
+        return
+    
+    if len(message.command) < 2:
+        status = "✅ Enabled" if chat_id in captcha_enabled_chats else "❌ Disabled"
+        await message.reply_text(f"**🛡️ Captcha Status:** {status}\n\nUse `/captcha on` or `/captcha off`")
+        return
+    
+    action = message.command[1].lower()
+    
+    if action == "on":
+        captcha_enabled_chats.add(chat_id)
+        await message.reply_text(
+            "**✅ Captcha Verification Enabled!**\n\n"
+            "New members will be muted and need to verify in DM.\n"
+            "⏱️ Timeout: 10 minutes"
+        )
+    elif action == "off":
+        if chat_id in captcha_enabled_chats:
+            captcha_enabled_chats.remove(chat_id)
+        await message.reply_text("**❌ Captcha Verification Disabled!**")
+    else:
+        await message.reply_text("**❌ Use:** `/captcha on` or `/captcha off`")
+
+def generate_math_question():
+    """Generate a simple math question"""
+    num1 = random.randint(1, 10)
+    num2 = random.randint(1, 10)
+    operations = [('+', num1 + num2), ('-', num1 - num2 if num1 > num2 else num2 - num1), ('×', num1 * num2)]
+    op, answer = random.choice(operations)
+    
+    if op == '-' and num1 < num2:
+        num1, num2 = num2, num1
+    
+    question = f"{num1} {op} {num2}"
     
     # Generate wrong answers
     wrong_answers = set()
@@ -76,293 +69,208 @@ def generate_math_captcha():
         if wrong != answer and wrong >= 0:
             wrong_answers.add(wrong)
     
-    answers = list(wrong_answers) + [answer]
-    random.shuffle(answers)
-    
-    return question, answer, answers
-
-def generate_emoji_captcha():
-    """Generate emoji selection captcha"""
-    emojis = ["🍎", "🚗", "⚽", "🎸", "🌟", "🎨", "🔥", "💎", "🌺", "🎭", 
-              "🦁", "🎪", "🚀", "🏆", "🎯", "🌈", "⚡", "🎁", "🌊", "🎵"]
-    
-    target_emoji = random.choice(emojis)
-    
-    # Create options with target and decoys
-    options = [target_emoji]
-    while len(options) < 4:
-        emoji = random.choice(emojis)
-        if emoji not in options:
-            options.append(emoji)
-    
+    options = list(wrong_answers) + [answer]
     random.shuffle(options)
     
-    return target_emoji, options
+    return question, answer, options
 
-@app.on_message(filters.command("captcha", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
-async def captcha_cmd(client: Client, message: Message):
-    """Enable/disable captcha or show settings"""
-    chat_id = message.chat.id
+@app.on_chat_member_updated()
+async def handle_new_member(client: Client, update):
+    """Handle new members joining"""
+    chat = update.chat
     
-    if not await is_admin(client, chat_id, message.from_user.id):
-        await message.reply_text("**❌ Only admins can use this command!**")
+    # Only process group chats
+    if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
         return
     
-    if len(message.command) < 2:
-        # Show current settings
-        settings = await get_captcha_settings(chat_id)
-        status = "✅ Enabled" if settings["enabled"] else "❌ Disabled"
-        captcha_type = CAPTCHA_TYPES.get(settings["type"], "Button Click")
-        timeout = settings["timeout"]
-        action = settings["action"].upper()
-        
-        text = f"""
-**🛡️ Captcha Settings**
-
-**Status:** {status}
-**Type:** {captcha_type}
-**Timeout:** {timeout} seconds
-**Action:** {action}
-
-**Commands:**
-• `/captcha on` - Enable captcha
-• `/captcha off` - Disable captcha
-• `/captcha type` - Change captcha type
-• `/captcha timeout <seconds>` - Set timeout
-• `/captcha action <kick/ban>` - Set action
-"""
-        await message.reply_text(text)
+    chat_id = chat.id
+    
+    # Check if captcha is enabled
+    if chat_id not in captcha_enabled_chats:
         return
     
-    action = message.command[1].lower()
-    
-    if action == "on":
-        settings = await get_captcha_settings(chat_id)
-        settings["enabled"] = True
-        settings["chat_id"] = chat_id
-        await save_captcha_settings(chat_id, settings)
-        await message.reply_text("**✅ Captcha verification enabled!**\n\nNew members will need to verify before chatting.")
-    
-    elif action == "off":
-        settings = await get_captcha_settings(chat_id)
-        settings["enabled"] = False
-        settings["chat_id"] = chat_id
-        await save_captcha_settings(chat_id, settings)
-        await message.reply_text("**❌ Captcha verification disabled!**")
-    
-    elif action == "type":
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🔢 Math", callback_data=f"captcha_type_math_{chat_id}"),
-                InlineKeyboardButton("🔘 Button", callback_data=f"captcha_type_button_{chat_id}")
-            ],
-            [
-                InlineKeyboardButton("😊 Emoji", callback_data=f"captcha_type_emoji_{chat_id}")
-            ]
-        ])
-        await message.reply_text("**🛡️ Select Captcha Type:**", reply_markup=keyboard)
-    
-    elif action == "timeout":
-        if len(message.command) < 3:
-            await message.reply_text("**❌ Please specify timeout in seconds!**\nExample: `/captcha timeout 120`")
-            return
-        
-        try:
-            timeout = int(message.command[2])
-            if timeout < 30 or timeout > 300:
-                await message.reply_text("**❌ Timeout must be between 30 and 300 seconds!**")
-                return
-            
-            settings = await get_captcha_settings(chat_id)
-            settings["timeout"] = timeout
-            settings["chat_id"] = chat_id
-            await save_captcha_settings(chat_id, settings)
-            await message.reply_text(f"**✅ Captcha timeout set to {timeout} seconds!**")
-        except ValueError:
-            await message.reply_text("**❌ Invalid timeout value!**")
-    
-    elif action == "action":
-        if len(message.command) < 3:
-            await message.reply_text("**❌ Please specify action (kick/ban)!**\nExample: `/captcha action kick`")
-            return
-        
-        action_type = message.command[2].lower()
-        if action_type not in ["kick", "ban"]:
-            await message.reply_text("**❌ Invalid action! Use: kick or ban**")
-            return
-        
-        settings = await get_captcha_settings(chat_id)
-        settings["action"] = action_type
-        settings["chat_id"] = chat_id
-        await save_captcha_settings(chat_id, settings)
-        await message.reply_text(f"**✅ Failed captcha action set to {action_type.upper()}!**")
-    
-    else:
-        await message.reply_text("**❌ Invalid command!**\n\nUse: `/captcha on/off/type/timeout/action`")
-
-@app.on_callback_query(filters.regex(r"^captcha_type_"))
-async def captcha_type_callback(client: Client, callback: CallbackQuery):
-    """Handle captcha type selection"""
-    data = callback.data.split("_")
-    captcha_type = data[2]
-    chat_id = int(data[3])
-    
-    if not await is_admin(client, chat_id, callback.from_user.id):
-        await callback.answer("❌ Only admins can change this!", show_alert=True)
-        return
-    
-    settings = await get_captcha_settings(chat_id)
-    settings["type"] = captcha_type
-    settings["chat_id"] = chat_id
-    await save_captcha_settings(chat_id, settings)
-    
-    type_name = CAPTCHA_TYPES.get(captcha_type, "Button Click")
-    await callback.answer(f"✅ Captcha type set to {type_name}!", show_alert=True)
-    await callback.message.edit_text(f"**✅ Captcha type changed to: {type_name}**")
-
-@app.on_chat_member_updated(filters.group)
-async def welcome_captcha(client: Client, update):
-    """Handle new member joins"""
-    chat_id = update.chat.id
+    # Check if this is a new member join
     new_member = update.new_chat_member
+    old_member = update.old_chat_member
     
-    if not new_member or new_member.status not in ["member", "restricted"]:
+    if not new_member:
+        return
+    
+    # Check if user just joined
+    if old_member and old_member.status not in [None, "left", "kicked"]:
+        return
+    
+    if new_member.status not in ["member", "restricted"]:
         return
     
     user = new_member.user
+    
+    # Ignore bots
     if user.is_bot:
         return
     
-    # Check if captcha is enabled
-    settings = await get_captcha_settings(chat_id)
-    if not settings["enabled"]:
-        return
+    user_id = user.id
+    user_mention = user.mention
     
-    # Mute the user
+    # Mute the user immediately
     try:
         await client.restrict_chat_member(
             chat_id,
-            user.id,
+            user_id,
             ChatPermissions(can_send_messages=False)
         )
     except Exception as e:
-        print(f"Error muting user: {e}")
+        print(f"Failed to mute user: {e}")
         return
     
-    # Generate captcha based on type
-    captcha_type = settings["type"]
-    timeout = settings["timeout"]
+    # Generate math question
+    question, correct_answer, options = generate_math_question()
     
-    if captcha_type == "math":
-        question, answer, options = generate_math_captcha()
-        text = f"**👋 Welcome {user.mention}!**\n\n**🔒 Please verify you're human:**\n\n**Solve:** `{question} = ?`\n\n⏱️ Time: {timeout} seconds"
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(str(options[0]), callback_data=f"verify_{chat_id}_{user.id}_{options[0]}"),
-             InlineKeyboardButton(str(options[1]), callback_data=f"verify_{chat_id}_{user.id}_{options[1]}")],
-            [InlineKeyboardButton(str(options[2]), callback_data=f"verify_{chat_id}_{user.id}_{options[2]}"),
-             InlineKeyboardButton(str(options[3]), callback_data=f"verify_{chat_id}_{user.id}_{options[3]}")]
-        ])
-        
-        captcha_data[f"{chat_id}_{user.id}"] = answer
+    # Create verification button
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Complete Verification", url=f"https://t.me/{(await client.get_me()).username}?start=verify_{chat_id}_{user_id}")]
+    ])
     
-    elif captcha_type == "emoji":
-        target_emoji, options = generate_emoji_captcha()
-        text = f"**👋 Welcome {user.mention}!**\n\n**🔒 Please verify you're human:**\n\n**Select:** {target_emoji}\n\n⏱️ Time: {timeout} seconds"
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(options[0], callback_data=f"verify_{chat_id}_{user.id}_{options[0]}"),
-             InlineKeyboardButton(options[1], callback_data=f"verify_{chat_id}_{user.id}_{options[1]}")],
-            [InlineKeyboardButton(options[2], callback_data=f"verify_{chat_id}_{user.id}_{options[2]}"),
-             InlineKeyboardButton(options[3], callback_data=f"verify_{chat_id}_{user.id}_{options[3]}")]
-        ])
-        
-        captcha_data[f"{chat_id}_{user.id}"] = target_emoji
+    # Send message in group
+    welcome_msg = await client.send_message(
+        chat_id,
+        f"**👋 Welcome {user_mention}!**\n\n"
+        f"**🔒 You have been muted for security.**\n\n"
+        f"Click the button below to verify in DM.\n"
+        f"⏱️ You have **10 minutes** to complete verification.\n\n"
+        f"❌ Failure to verify will result in removal.",
+        reply_markup=keyboard
+    )
     
-    else:  # button type
-        text = f"**👋 Welcome {user.mention}!**\n\n**🔒 Please verify you're human:**\n\nClick the button below to verify!\n\n⏱️ Time: {timeout} seconds"
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ I'm Human!", callback_data=f"verify_{chat_id}_{user.id}_human")]
-        ])
-        
-        captcha_data[f"{chat_id}_{user.id}"] = "human"
+    # Store verification data
+    pending_verifications[f"{chat_id}_{user_id}"] = {
+        "chat_id": chat_id,
+        "user_id": user_id,
+        "question": question,
+        "answer": correct_answer,
+        "options": options,
+        "welcome_msg_id": welcome_msg.id,
+        "user_mention": user_mention
+    }
     
-    try:
-        captcha_msg = await client.send_message(chat_id, text, reply_markup=keyboard)
-        
-        # Store for timeout handling
-        pending_users[f"{chat_id}_{user.id}"] = {
-            "msg_id": captcha_msg.id,
-            "time": time.time(),
-            "timeout": timeout
-        }
-        
-        # Schedule timeout check
-        asyncio.create_task(check_captcha_timeout(client, chat_id, user.id, captcha_msg.id, timeout, settings["action"]))
-    
-    except Exception as e:
-        print(f"Error sending captcha: {e}")
+    # Schedule timeout (10 minutes)
+    asyncio.create_task(handle_verification_timeout(client, chat_id, user_id, welcome_msg.id))
 
-async def check_captcha_timeout(client: Client, chat_id: int, user_id: int, msg_id: int, timeout: int, action: str):
-    """Check if user completed captcha in time"""
-    await asyncio.sleep(timeout)
+async def handle_verification_timeout(client: Client, chat_id: int, user_id: int, msg_id: int):
+    """Kick user after 10 minutes if not verified"""
+    await asyncio.sleep(600)  # 10 minutes
     
     key = f"{chat_id}_{user_id}"
     
-    # Check if user still pending
-    if key in pending_users:
+    if key in pending_verifications:
         try:
-            # Delete captcha message
-            await client.delete_messages(chat_id, msg_id)
+            # Kick the user
+            await client.ban_chat_member(chat_id, user_id)
+            await client.unban_chat_member(chat_id, user_id)
             
-            # Take action
-            if action == "ban":
-                await client.ban_chat_member(chat_id, user_id)
-                action_text = "banned"
-            else:
-                await client.ban_chat_member(chat_id, user_id)
-                await client.unban_chat_member(chat_id, user_id)
-                action_text = "kicked"
+            # Delete welcome message
+            try:
+                await client.delete_messages(chat_id, msg_id)
+            except:
+                pass
             
-            # Send notification
+            # Send timeout message
             await client.send_message(
                 chat_id,
-                f"**⏱️ Captcha Failed!**\n\nUser was {action_text} for not completing verification in time."
+                f"**⏱️ Verification Timeout!**\n\n"
+                f"User was removed for not completing verification within 10 minutes."
             )
             
             # Cleanup
-            if key in captcha_data:
-                del captcha_data[key]
-            if key in pending_users:
-                del pending_users[key]
-        
+            del pending_verifications[key]
         except Exception as e:
-            print(f"Error in timeout handler: {e}")
+            print(f"Error in timeout: {e}")
 
-@app.on_callback_query(filters.regex(r"^verify_"))
-async def verify_callback(client: Client, callback: CallbackQuery):
-    """Handle captcha verification"""
-    data = callback.data.split("_")
-    chat_id = int(data[1])
-    user_id = int(data[2])
-    user_answer = "_".join(data[3:])  # Handle emoji with underscores
+@app.on_message(filters.command("start") & filters.private)
+async def start_verification(client: Client, message: Message):
+    """Handle verification in DM"""
+    if len(message.command) < 2:
+        await message.reply_text("👋 Hi! I'm a group management bot.")
+        return
     
-    # Check if the person clicking is the new member
-    if callback.from_user.id != user_id:
-        await callback.answer("❌ This verification is not for you!", show_alert=True)
+    # Check if this is a verification request
+    if not message.command[1].startswith("verify_"):
+        return
+    
+    try:
+        parts = message.command[1].split("_")
+        chat_id = int(parts[1])
+        user_id = int(parts[2])
+    except:
+        await message.reply_text("❌ Invalid verification link!")
+        return
+    
+    # Check if user is the correct person
+    if message.from_user.id != user_id:
+        await message.reply_text("❌ This verification is not for you!")
         return
     
     key = f"{chat_id}_{user_id}"
     
-    if key not in captcha_data:
+    # Check if verification exists
+    if key not in pending_verifications:
+        await message.reply_text("❌ Verification expired or already completed!")
+        return
+    
+    verification = pending_verifications[key]
+    question = verification["question"]
+    options = verification["options"]
+    
+    # Create answer buttons
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(str(options[0]), callback_data=f"ans_{chat_id}_{user_id}_{options[0]}"),
+            InlineKeyboardButton(str(options[1]), callback_data=f"ans_{chat_id}_{user_id}_{options[1]}")
+        ],
+        [
+            InlineKeyboardButton(str(options[2]), callback_data=f"ans_{chat_id}_{user_id}_{options[2]}"),
+            InlineKeyboardButton(str(options[3]), callback_data=f"ans_{chat_id}_{user_id}_{options[3]}")
+        ]
+    ])
+    
+    await message.reply_text(
+        f"**🤖 Captcha Verification**\n\n"
+        f"**Solve this math question:**\n\n"
+        f"📝 **{question} = ?**\n\n"
+        f"Select the correct answer:",
+        reply_markup=keyboard
+    )
+
+@app.on_callback_query(filters.regex(r"^ans_"))
+async def handle_answer(client: Client, callback: CallbackQuery):
+    """Handle captcha answer"""
+    try:
+        parts = callback.data.split("_")
+        chat_id = int(parts[1])
+        user_id = int(parts[2])
+        user_answer = int(parts[3])
+    except:
+        await callback.answer("❌ Error processing answer!", show_alert=True)
+        return
+    
+    # Check if user is correct person
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your verification!", show_alert=True)
+        return
+    
+    key = f"{chat_id}_{user_id}"
+    
+    if key not in pending_verifications:
         await callback.answer("❌ Verification expired!", show_alert=True)
         return
     
-    correct_answer = str(captcha_data[key])
+    verification = pending_verifications[key]
+    correct_answer = verification["answer"]
+    user_mention = verification["user_mention"]
+    welcome_msg_id = verification["welcome_msg_id"]
     
-    # Check answer
-    if str(user_answer) == correct_answer:
+    if user_answer == correct_answer:
+        # Correct answer!
         try:
             # Unmute user
             await client.restrict_chat_member(
@@ -375,67 +283,74 @@ async def verify_callback(client: Client, callback: CallbackQuery):
                     can_add_web_page_previews=True,
                     can_send_polls=True,
                     can_invite_users=True,
-                    can_pin_messages=True,
-                    can_change_info=True
+                    can_pin_messages=False,
+                    can_change_info=False
                 )
             )
             
-            # Update message
+            # Update DM message
             await callback.message.edit_text(
-                f"**✅ Verification Successful!**\n\n{callback.from_user.mention} has been verified!\n\nWelcome to the group! 🎉"
+                "**✅ Verification Successful!**\n\n"
+                "You have been verified and can now chat in the group!\n"
+                "Welcome! 🎉"
             )
             
-            await callback.answer("✅ Verified successfully! Welcome!", show_alert=True)
+            await callback.answer("✅ Verified! You can chat now.", show_alert=True)
+            
+            # Delete welcome message in group
+            try:
+                await client.delete_messages(chat_id, welcome_msg_id)
+            except:
+                pass
+            
+            # Send success message in group
+            await client.send_message(
+                chat_id,
+                f"**✅ Verification Complete!**\n\n"
+                f"{user_mention} has completed captcha verification.\n"
+                f"Welcome to the group! You can chat now. 🎉"
+            )
             
             # Cleanup
-            if key in captcha_data:
-                del captcha_data[key]
-            if key in pending_users:
-                del pending_users[key]
-        
+            del pending_verifications[key]
+            
         except Exception as e:
-            print(f"Error unmuting user: {e}")
-            await callback.answer("❌ Error unmuting user!", show_alert=True)
-    
+            print(f"Error unmuting: {e}")
+            await callback.answer("❌ Error completing verification!", show_alert=True)
     else:
-        await callback.answer("❌ Wrong answer! Try again.", show_alert=True)
+        # Wrong answer
+        await callback.answer(f"❌ Wrong answer! Correct answer: {correct_answer}\nTry again.", show_alert=True)
 
 __help__ = """
-**🛡️ Captcha Verification Module:**
+**🛡️ Captcha Verification Module**
 
-Protect your group from bots and spam with automatic captcha verification!
+Protect your group from bots and spam!
 
-**Admin Commands:**
-• `/captcha` - Show current settings
+**Commands:**
 • `/captcha on` - Enable captcha verification
 • `/captcha off` - Disable captcha verification
-• `/captcha type` - Change captcha type (Math/Button/Emoji)
-• `/captcha timeout <seconds>` - Set timeout (30-300 seconds)
-• `/captcha action <kick/ban>` - Set action for failed verification
-
-**Captcha Types:**
-• **Math** - Solve simple math questions
-• **Button** - Click "I'm Human" button
-• **Emoji** - Select the correct emoji
-
-**Features:**
-• ✅ Auto-mute new members until verified
-• ⏱️ Customizable timeout
-• 🚫 Auto-kick/ban on failure
-• 🎨 Multiple captcha types
-• 🤖 Bot protection
-• 💾 Settings saved per group
+• `/captcha` - Check current status
 
 **How it works:**
-1. New member joins group
-2. Bot mutes them automatically
-3. Captcha message is sent
-4. Member solves captcha
-5. Bot unmutes on success
-6. Kicks/bans on failure or timeout
+1. New member joins → Bot mutes them
+2. Member gets verification button
+3. Clicks button → Opens bot DM
+4. Solves math question in DM
+5. ✅ Correct → Unmuted & welcomed
+6. ❌ No verification in 10 min → Kicked
 
-**Note:** Only admins can configure captcha settings.
-Bot needs admin permissions to restrict members!
+**Features:**
+• 🔒 Auto-mute on join
+• 📩 Verification in DM
+• 🔢 Random math questions
+• ⏱️ 10-minute timeout
+• 🚫 Auto-kick on timeout
+• ✅ Welcome message on success
+
+**Note:** 
+- Only admins can enable/disable
+- Bot needs admin permissions to restrict members
+- Users must start the bot to verify
 """
 
 __module__ = "Captcha"
