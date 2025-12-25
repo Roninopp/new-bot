@@ -57,8 +57,8 @@ async def broadcast_all(client: Client, message: Message):
     status_msg = await message.reply_text("📢 **Broadcasting Started...**\n\nFetching all chats and users...")
     
     # Get all users and groups
-    all_users = await total_users.find_all()
-    all_chats = await total_chats.find_all()
+    all_users = await total_users.find({}).to_list(length=None)
+    all_chats = await total_chats.find({}).to_list(length=None)
     
     total_users_count = len(all_users)
     total_chats_count = len(all_chats)
@@ -139,7 +139,7 @@ async def broadcast_groups(client: Client, message: Message):
     status_msg = await message.reply_text("📢 **Broadcasting to Groups...**\n\nFetching all groups...")
     
     # Get all groups
-    all_chats = await total_chats.find_all()
+    all_chats = await total_chats.find({}).to_list(length=None)
     total_chats_count = len(all_chats)
     
     await status_msg.edit_text(
@@ -188,7 +188,7 @@ async def broadcast_users(client: Client, message: Message):
     status_msg = await message.reply_text("📢 **Broadcasting to Users...**\n\nFetching all users...")
     
     # Get all users
-    all_users = await total_users.find_all()
+    all_users = await total_users.find({}).to_list(length=None)
     total_users_count = len(all_users)
     
     await status_msg.edit_text(
@@ -257,8 +257,8 @@ async def broadcast_all_text(client: Client, message: Message):
     status_msg = await message.reply_text("📢 **Broadcasting Started...**\n\nFetching all chats and users...")
     
     # Get all users and groups
-    all_users = await total_users.find_all()
-    all_chats = await total_chats.find_all()
+    all_users = await total_users.find({}).to_list(length=None)
+    all_chats = await total_chats.find({}).to_list(length=None)
     
     total_users_count = len(all_users)
     total_chats_count = len(all_chats)
