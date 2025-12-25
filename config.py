@@ -12,8 +12,8 @@ class config:
     MAX_MESSAGE_CACHE_SIZE = 100
     MAX_CONCURRENT_TRANSMISSIONS = 10
     START_STICKER_FILE_ID = [
-        "CAACAgUAAxkDAAIEJ2iMdh8zS6TznkDvWUM8xaS-pLqyAALbIgACZT1RVOUdHBfM0ReSHgQ",
-        "CAACAgUAAxkDAAIEJ2iMdh8zS6TznkDvWUM8xaS-pLqyAALbIgACZT1RVOUdHBfM0ReSHgQ",
+        "CAACAgUAAxkBAAIFfGlM7HLjcbuQE9j1cLsDtuYWRhLiAAIeGgACtE9oVle-heuzAQMPHgQ",
+        "CAACAgUAAxkBAAIFfGlM7HLjcbuQE9j1cLsDtuYWRhLiAAIeGgACtE9oVle-heuzAQMPHgQ",
     ]
      
     #Git
@@ -26,10 +26,10 @@ class config:
     OWNER_ID = 6837532865
     OWNER_USERNAME = "Dushmanxroninn"
     SUPPORT_CHAT = -1003103484269
-    SUPPORT_CHAT_USERNAME = "black_hawk_support"
-    SUPPORT_CHAT_LINK = "https://t.me/Black_Hawk_Support"
-    LOG_CHANNEL = -1003103484269
-    ERROR_LOG_CHANNEL = -1003103484269
+    SUPPORT_CHAT_USERNAME = "black_hawk_Division"
+    SUPPORT_CHAT_LINK = "https://t.me/Black_Hawk_Division"
+    LOG_CHANNEL = -1003123258753
+    ERROR_LOG_CHANNEL = -1003123258753
     DOWNLOAD_LOCATION = "./downloads"
     COMMAND_PREFIXES = ["/" , "!" , "." , "#" , "$" , "%" , "&" , "?"] 
     CMD_STARTERS = "/.!&#%$"
