@@ -36,7 +36,11 @@ __module__ = "Broadcast"
 # Check if user is admin/owner
 async def is_admin(user_id: int) -> bool:
     """Check if user is in the admin list."""
-    return user_id in config.config.OWNER_ID
+    # Handle both single owner ID (int) and list of owner IDs
+    if isinstance(config.config.OWNER_ID, list):
+        return user_id in config.config.OWNER_ID
+    else:
+        return user_id == config.config.OWNER_ID
 
 @app.on_message(filters.command("broadcastall", prefixes=config.config.COMMAND_PREFIXES) & filters.reply)
 async def broadcast_all(client: Client, message: Message):
