@@ -31,9 +31,35 @@ async def escape_mentions_using_curly_brackets_wl(
     text: str,
     parse_words: list,
 ) -> str:
+    """Format welcome text with user variables"""
     teks = await escape_invalid_curly_brackets(text, parse_words)
     if teks:
         chat_title = m.chat.title if hasattr(m.chat, 'title') and m.chat.title else "this chat"
+        
+        # Build username string
+        if user.username:
+            username_str = "@" + escape(user.username)
+        else:
+            username_str = escape(user.first_name)
+        
+        # Build mention HTML
+        mention_str = f'<a href="tg://user?id={user.id}">{escape(user.first_name)}</a>'
+        
+        # Get user bio if available
+        bio_str = ""
+        try:
+            # Try to get full user info with bio
+            from Yumeko import app
+            full_user = await app.get_users(user.id)
+            if hasattr(full_user, 'bio') and full_user.bio:
+                bio_str = escape(full_user.bio)
+            else:
+                bio_str = "No bio set"
+        except Exception as e:
+            print(f"[WELCOME] Could not fetch bio: {e}")
+            bio_str = "Bio unavailable"
+        
+        # Format the text with all variables
         teks = teks.format(
             first=escape(user.first_name),
             last=escape(user.last_name or user.first_name),
@@ -45,14 +71,11 @@ async def escape_mentions_using_curly_brackets_wl(
                 if user.last_name
                 else [escape(user.first_name)],
             ),
-            username=(
-                "@" + (await escape_markdown(escape(user.username)))
-                if user.username
-                else (await (mention_html(escape(user.first_name), user.id)))
-            ),
-            mention=await (mention_html(escape(user.first_name), user.id)),
+            username=username_str,
+            mention=mention_str,
             chatname=chat_title,
             id=user.id,
+            bio=bio_str,
         )
     else:
         teks = ""
@@ -492,7 +515,7 @@ async def send_welcome_message(c: Client, chat_id: int, user: User, chat_obj):
         
         minimal_msg = MinimalMsg(chat_obj)
         
-        parse_words = ["first", "last", "fullname", "username", "mention", "id", "chatname"]
+        parse_words = ["first", "last", "fullname", "username", "mention", "id", "chatname", "bio"]
         
         if is_custom_welcome:
             # Custom welcome
