@@ -148,7 +148,7 @@ async def create_welcome_card(user: User, chat_title: str, member_count: int, pr
         draw.line([(0, 150), (300, 100), (600, 150)], fill=(0, 255, 255, 100), width=2)
         draw.line([(WELCOME_CARD_WIDTH, 180), (700, 130), (400, 180)], fill=(255, 50, 100, 100), width=2)
         
-        # Load and process profile picture with ELECTRIC GLOW effect
+        # Load and process profile picture with INTENSE ELECTRIC GLOW
         profile_x = (WELCOME_CARD_WIDTH - PROFILE_PIC_SIZE) // 2
         profile_y = 60
         
@@ -163,46 +163,65 @@ async def create_welcome_card(user: User, chat_title: str, member_count: int, pr
                 circular_pic.paste(profile_pic.convert('RGB'), (0, 0))
                 circular_pic.putalpha(mask)
                 
-                # ELECTRIC GLOW RINGS (multiple layers for intensity)
+                # INTENSE ELECTRIC GLOW RINGS (like the reference image!)
                 draw = ImageDraw.Draw(img, 'RGBA')
-                for glow in range(5):
-                    glow_size = 20 + glow * 8
+                
+                # Multiple concentric rings with high intensity
+                for ring_num in range(8):
+                    ring_offset = 15 + ring_num * 5
+                    ring_alpha = 255 - ring_num * 25
+                    # Cyan electric rings
                     draw.ellipse([
-                        (profile_x - glow_size, profile_y - glow_size),
-                        (profile_x + PROFILE_PIC_SIZE + glow_size, profile_y + PROFILE_PIC_SIZE + glow_size)
-                    ], outline=(0, 255, 255, 150 - glow * 25), width=3)
+                        (profile_x - ring_offset, profile_y - ring_offset),
+                        (profile_x + PROFILE_PIC_SIZE + ring_offset, profile_y + PROFILE_PIC_SIZE + ring_offset)
+                    ], outline=(0, 255, 255, ring_alpha), width=3)
                 
-                # Main electric border (cyan)
+                # Outer glow burst effect
+                for burst in range(12, 0, -1):
+                    burst_size = 60 + burst * 3
+                    burst_alpha = int(200 * (12 - burst) / 12 * 0.3)
+                    draw.ellipse([
+                        (profile_x - burst_size, profile_y - burst_size),
+                        (profile_x + PROFILE_PIC_SIZE + burst_size, profile_y + PROFILE_PIC_SIZE + burst_size)
+                    ], outline=(150, 255, 255, burst_alpha), width=2)
+                
+                # INTENSE WINGS - Symmetrical arc-based wings
+                wing_center_y = profile_y + PROFILE_PIC_SIZE // 2
+                wing_base_x_left = profile_x - 20
+                wing_base_x_right = profile_x + PROFILE_PIC_SIZE + 20
+                
+                # Left wing - multiple layers for intensity
+                for layer in range(6):
+                    wing_length = 80 + layer * 12
+                    wing_height = 50 + layer * 8
+                    wing_alpha = 255 - layer * 35
+                    
+                    # Create wing shape with multiple arcs
+                    for arc_offset in range(3):
+                        draw.arc([
+                            (wing_base_x_left - wing_length - arc_offset * 3, wing_center_y - wing_height - arc_offset * 2),
+                            (wing_base_x_left + arc_offset * 3, wing_center_y + wing_height + arc_offset * 2)
+                        ], start=-100, end=100, fill=(200, 255, 255, wing_alpha), width=4 - layer // 2)
+                
+                # Right wing - mirrored
+                for layer in range(6):
+                    wing_length = 80 + layer * 12
+                    wing_height = 50 + layer * 8
+                    wing_alpha = 255 - layer * 35
+                    
+                    for arc_offset in range(3):
+                        draw.arc([
+                            (wing_base_x_right - arc_offset * 3, wing_center_y - wing_height - arc_offset * 2),
+                            (wing_base_x_right + wing_length + arc_offset * 3, wing_center_y + wing_height + arc_offset * 2)
+                        ], start=80, end=280, fill=(200, 255, 255, wing_alpha), width=4 - layer // 2)
+                
+                # Inner bright white ring
                 draw.ellipse([
-                    (profile_x - 15, profile_y - 15),
-                    (profile_x + PROFILE_PIC_SIZE + 15, profile_y + PROFILE_PIC_SIZE + 15)
-                ], outline=(0, 255, 255, 255), width=5)
+                    (profile_x - 8, profile_y - 8),
+                    (profile_x + PROFILE_PIC_SIZE + 8, profile_y + PROFILE_PIC_SIZE + 8)
+                ], outline=(255, 255, 255, 255), width=4)
                 
-                # Secondary border (white)
-                draw.ellipse([
-                    (profile_x - 10, profile_y - 10),
-                    (profile_x + PROFILE_PIC_SIZE + 10, profile_y + PROFILE_PIC_SIZE + 10)
-                ], outline=(255, 255, 255, 255), width=3)
-                
-                # WINGS effect (left and right)
-                wing_y = profile_y + PROFILE_PIC_SIZE // 2
-                # Left wing
-                for i in range(5):
-                    offset = i * 15
-                    draw.arc([
-                        (profile_x - 100 - offset, wing_y - 40 - offset),
-                        (profile_x - 20 + offset, wing_y + 40 + offset)
-                    ], start=-90, end=90, fill=(200, 255, 255, 180 - i * 30), width=4)
-                
-                # Right wing
-                for i in range(5):
-                    offset = i * 15
-                    draw.arc([
-                        (profile_x + PROFILE_PIC_SIZE + 20 - offset, wing_y - 40 - offset),
-                        (profile_x + PROFILE_PIC_SIZE + 100 + offset, wing_y + 40 + offset)
-                    ], start=90, end=270, fill=(200, 255, 255, 180 - i * 30), width=4)
-                
-                # Paste profile pic
+                # Paste profile pic on top
                 img.paste(circular_pic, (profile_x, profile_y), circular_pic)
                 
                 # Clean up
@@ -213,45 +232,87 @@ async def create_welcome_card(user: User, chat_title: str, member_count: int, pr
             except Exception as e:
                 print(f"Error processing profile pic: {e}")
         else:
-            # Draw default avatar with ELECTRIC EFFECT
+            # Draw default avatar with INTENSE ELECTRIC EFFECT
             draw = ImageDraw.Draw(img, 'RGBA')
             
-            # Multiple glow rings
-            for glow in range(5):
-                glow_size = 20 + glow * 8
+            # Concentric electric rings
+            for ring_num in range(8):
+                ring_offset = 15 + ring_num * 5
+                ring_alpha = 255 - ring_num * 25
                 draw.ellipse([
-                    (profile_x - glow_size, profile_y - glow_size),
-                    (profile_x + PROFILE_PIC_SIZE + glow_size, profile_y + PROFILE_PIC_SIZE + glow_size)
-                ], outline=(0, 255, 255, 150 - glow * 25), width=3)
+                    (profile_x - ring_offset, profile_y - ring_offset),
+                    (profile_x + PROFILE_PIC_SIZE + ring_offset, profile_y + PROFILE_PIC_SIZE + ring_offset)
+                ], outline=(0, 255, 255, ring_alpha), width=3)
             
-            # Main border
+            # Outer glow
+            for burst in range(12, 0, -1):
+                burst_size = 60 + burst * 3
+                burst_alpha = int(200 * (12 - burst) / 12 * 0.3)
+                draw.ellipse([
+                    (profile_x - burst_size, profile_y - burst_size),
+                    (profile_x + PROFILE_PIC_SIZE + burst_size, profile_y + PROFILE_PIC_SIZE + burst_size)
+                ], outline=(150, 255, 255, burst_alpha), width=2)
+            
+            # Wings for default avatar
+            wing_center_y = profile_y + PROFILE_PIC_SIZE // 2
+            wing_base_x_left = profile_x - 20
+            wing_base_x_right = profile_x + PROFILE_PIC_SIZE + 20
+            
+            # Left wing
+            for layer in range(6):
+                wing_length = 80 + layer * 12
+                wing_height = 50 + layer * 8
+                wing_alpha = 255 - layer * 35
+                
+                for arc_offset in range(3):
+                    draw.arc([
+                        (wing_base_x_left - wing_length - arc_offset * 3, wing_center_y - wing_height - arc_offset * 2),
+                        (wing_base_x_left + arc_offset * 3, wing_center_y + wing_height + arc_offset * 2)
+                    ], start=-100, end=100, fill=(200, 255, 255, wing_alpha), width=4 - layer // 2)
+            
+            # Right wing
+            for layer in range(6):
+                wing_length = 80 + layer * 12
+                wing_height = 50 + layer * 8
+                wing_alpha = 255 - layer * 35
+                
+                for arc_offset in range(3):
+                    draw.arc([
+                        (wing_base_x_right - arc_offset * 3, wing_center_y - wing_height - arc_offset * 2),
+                        (wing_base_x_right + wing_length + arc_offset * 3, wing_center_y + wing_height + arc_offset * 2)
+                    ], start=80, end=280, fill=(200, 255, 255, wing_alpha), width=4 - layer // 2)
+            
+            # Inner white ring
             draw.ellipse([
-                (profile_x - 15, profile_y - 15),
-                (profile_x + PROFILE_PIC_SIZE + 15, profile_y + PROFILE_PIC_SIZE + 15)
-            ], outline=(0, 255, 255, 255), width=5)
+                (profile_x - 8, profile_y - 8),
+                (profile_x + PROFILE_PIC_SIZE + 8, profile_y + PROFILE_PIC_SIZE + 8)
+            ], outline=(255, 255, 255, 255), width=4)
             
-            # Avatar circle
+            # Avatar circle (dark)
             draw.ellipse([
                 (profile_x, profile_y),
                 (profile_x + PROFILE_PIC_SIZE, profile_y + PROFILE_PIC_SIZE)
-            ], fill=(20, 20, 40, 255))
+            ], fill=(15, 15, 25, 255))
             
-            # User initial with glow
+            # User initial with intense glow
             initial = user.first_name[0].upper() if user.first_name else "U"
             initial_font = get_font(100, bold=True)
             
-            # Glow effect for initial
             bbox = draw.textbbox((0, 0), initial, font=initial_font)
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
             text_x = profile_x + (PROFILE_PIC_SIZE - text_width) // 2
             text_y = profile_y + (PROFILE_PIC_SIZE - text_height) // 2
             
-            # Draw glow
-            for offset in [(2,2), (-2,2), (2,-2), (-2,-2), (0,3), (0,-3), (3,0), (-3,0)]:
-                draw.text((text_x + offset[0], text_y + offset[1]), initial, font=initial_font, fill=(0, 255, 255, 100))
+            # Intense glow for initial
+            for glow_radius in range(10, 0, -1):
+                glow_alpha = int(255 * (10 - glow_radius) / 10 * 0.5)
+                for dx in range(-glow_radius, glow_radius + 1):
+                    for dy in range(-glow_radius, glow_radius + 1):
+                        if dx * dx + dy * dy <= glow_radius * glow_radius:
+                            draw.text((text_x + dx, text_y + dy), initial, font=initial_font, fill=(0, 255, 255, glow_alpha // 3))
             
-            # Draw main text
+            # Main initial text
             draw.text((text_x, text_y), initial, font=initial_font, fill=(255, 255, 255, 255))
         
         # Draw CYBERPUNK text with ELECTRIC GLOW
@@ -622,36 +683,37 @@ async def on_new_member_added(c: Client, m: Message):
         print(f"[WELCOME DEBUG] Returned from send_welcome_message for user {user.first_name}")
 
 
-# Handler 2: Users joining (PRIMARY handler for Supergroups)
-# This handler watches the member list DIRECTLY - works even when service messages are hidden
-# Uses the PROVEN simple check from professional bots
+# PRIMARY HANDLER: Status-based detection (works in ALL group types)
+# This handler watches member status changes directly - works even when service messages are hidden
 # NOTE: Bot MUST be an admin to receive chat_member_updated events
 @app.on_chat_member_updated()
-async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
-    # CATCH-ALL LOG
+async def on_member_status_changed(c: Client, update: ChatMemberUpdated):
+    """
+    PRIMARY HANDLER: Detects user joins via status transitions.
+    Works in ALL groups (public/private/supergroups) regardless of service message settings.
+    """
     print(f"\n{'='*80}")
     print(f"[WELCOME CMU] chat_member_updated TRIGGERED")
     print(f"[WELCOME CMU] Chat ID: {update.chat.id}")
     print(f"[WELCOME CMU] Chat Type: {update.chat.type}")
-    print(f"[WELCOME CMU] Chat Title: {update.chat.title if hasattr(update.chat, 'title') else 'NO TITLE'}")
     print(f"[WELCOME CMU] old_chat_member: {update.old_chat_member is not None}")
     print(f"[WELCOME CMU] new_chat_member: {update.new_chat_member is not None}")
     print(f"{'='*80}\n")
     
-    # Skip private chats
+    # Skip private chats (1-on-1 conversations)
     if update.chat.type == ChatType.PRIVATE:
         print(f"[WELCOME CMU] ❌ REJECTED: Private chat")
         return
     
-    # Only process groups
+    # Process ALL group types including supergroups
     if update.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL]:
         print(f"[WELCOME CMU] ❌ REJECTED: Invalid chat type {update.chat.type}")
         return
     
-    print(f"[WELCOME CMU] ✓ Valid group type")
+    print(f"[WELCOME CMU] ✓ Valid group type: {update.chat.type}")
     
-    # THE PROVEN SIMPLE CHECK (from your friend's code)
-    # This is how Rose, GroupHelp, and all major bots detect joins!
+    # THE PROVEN SIMPLE CHECK - works in supergroups!
+    # This is the EXACT logic from your friend's working code
     if update.new_chat_member and not update.old_chat_member:
         print(f"[WELCOME CMU] ✓✓✓ NEW JOIN DETECTED!")
         print(f"[WELCOME CMU] Logic: new_chat_member EXISTS and old_chat_member is None")
@@ -667,9 +729,8 @@ async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
     
     print(f"[WELCOME CMU] User: {user.first_name} (ID: {user.id})")
     print(f"[WELCOME CMU] is_bot: {user.is_bot}")
-    print(f"[WELCOME CMU] is_self: {getattr(user, 'is_self', False)}")
     
-    # Skip bot itself (using is_self like your friend's code)
+    # Skip bot itself (check both is_self and ID)
     if getattr(user, 'is_self', False) or user.id == c.me.id:
         print(f"[WELCOME CMU] ❌ SKIPPED: Bot itself")
         return
@@ -679,7 +740,7 @@ async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
     
     await send_welcome_message(c, update.chat.id, user, update.chat)
     
-    print(f"[WELCOME CMU] ✓ Welcome sent successfully!")
+    print(f"[WELCOME CMU] ✓ Welcome sent!")
     print(f"[WELCOME CMU] ========== END ==========\n")
     
     # Check if it's actually a new join
