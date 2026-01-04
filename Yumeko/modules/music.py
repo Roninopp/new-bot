@@ -20,7 +20,7 @@ userbot = Client(
     session_string=config.USERBOT_SESSION
 )
 
-# Initialize PyTgCalls with USERBOT (NEW API v1.2+)
+# Initialize PyTgCalls with USERBOT
 pytgcalls = PyTgCalls(userbot)
 
 # Queue system
@@ -32,10 +32,7 @@ DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 def get_ydl_opts():
-    """
-    Configure yt-dlp with AUTOMATIC po_token generation via RustyPipe plugin
-    NO MANUAL TOKEN NEEDED - Generates fresh tokens automatically!
-    """
+    """Configure yt-dlp with automatic po_token generation"""
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
@@ -45,43 +42,26 @@ def get_ydl_opts():
         'geo_bypass': True,
         'nocheckcertificate': True,
         'prefer_ffmpeg': True,
-        
-        # AUTOMATIC PO_TOKEN GENERATION
-        # The rustypipe plugin handles this automatically!
-        'extractor_args': {
-            'youtube': {
-                # Enable rustypipe for automatic po_token
-                'player_client': ['ios'],  # Pretend to be iOS app
-                'po_token': 'auto',  # Auto-generate via rustypipe
-            }
-        },
-        
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
     }
-    
     return opts
 
 async def download_audio(url: str) -> dict:
-    """
-    Download audio from YouTube using yt-dlp
-    Po_token is generated AUTOMATICALLY by rustypipe plugin!
-    """
+    """Download audio from YouTube using yt-dlp"""
     ydl_opts = get_ydl_opts()
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = await asyncio.to_thread(ydl.extract_info, url, download=True)
             
-            # Handle playlist
             if 'entries' in info:
                 info = info['entries'][0]
             
             file_path = ydl.prepare_filename(info)
-            # Change extension to mp3
             file_path = os.path.splitext(file_path)[0] + '.mp3'
             
             return {
@@ -141,7 +121,6 @@ async def play_next(chat_id: int):
     queue = get_queue(chat_id)
     
     if not queue:
-        # Queue is empty, leave call
         try:
             await pytgcalls.leave_call(chat_id)
         except Exception:
@@ -150,12 +129,10 @@ async def play_next(chat_id: int):
             del current_playing[chat_id]
         return
     
-    # Get next song
     next_song = queue.pop(0)
     current_playing[chat_id] = next_song
     
     try:
-        # NEW API v1.2+ uses MediaStream
         await pytgcalls.play(
             chat_id,
             MediaStream(
@@ -166,30 +143,11 @@ async def play_next(chat_id: int):
     except Exception:
         await play_next(chat_id)
 
-@pytgcalls.on_stream_end()
-async def on_stream_end(client: PyTgCalls, chat_id: int):
-    """Handle stream end event (NEW API v1.2+)"""
-    
-    # Clean up current file
-    if chat_id in current_playing:
-        file_path = current_playing[chat_id].get('file_path')
-        if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
-    
-    # Play next song
-    await play_next(chat_id)
-
 @app.on_message(filters.command("play", config.COMMAND_PREFIXES) & filters.group)
 @error
 @save
 async def play_command(client, message: Message):
-    """
-    Play music in voice chat
-    Po_token is generated AUTOMATICALLY - no manual setup needed!
-    """
+    """Play music in voice chat"""
     
     if len(message.command) < 2:
         await message.reply(
@@ -204,7 +162,6 @@ async def play_command(client, message: Message):
     status_msg = await message.reply("🔍 **Searching...**")
     
     try:
-        # Determine if it's a URL or search query
         if is_youtube_url(query):
             url = query
         else:
@@ -213,9 +170,8 @@ async def play_command(client, message: Message):
                 await status_msg.edit("❌ **No results found!**")
                 return
         
-        await status_msg.edit("⏬ **Downloading...**\n_Auto-generating po_token..._")
+        await status_msg.edit("⏬ **Downloading...**")
         
-        # Download audio - po_token generated automatically by rustypipe!
         audio_data = await download_audio(url)
         
         song_info = {
@@ -226,9 +182,7 @@ async def play_command(client, message: Message):
             'duration': audio_data.get('duration', 0)
         }
         
-        # Check if already playing
         if message.chat.id in current_playing:
-            # Add to queue
             add_to_queue(message.chat.id, song_info)
             queue_position = len(get_queue(message.chat.id))
             await status_msg.edit(
@@ -237,12 +191,10 @@ async def play_command(client, message: Message):
                 f"👤 **Requested by:** {message.from_user.mention}"
             )
         else:
-            # Play immediately
             current_playing[message.chat.id] = song_info
             await status_msg.edit("🎵 **Joining voice chat...**")
             
             try:
-                # NEW API v1.2+ - Use MediaStream
                 await pytgcalls.play(
                     message.chat.id,
                     MediaStream(
@@ -257,26 +209,20 @@ async def play_command(client, message: Message):
                     f"▶️ **Now Playing**\n\n"
                     f"🎵 **Title:** {audio_data['title']}\n"
                     f"⏱️ **Duration:** {duration_str}\n"
-                    f"👤 **Requested by:** {message.from_user.mention}\n\n"
-                    f"_✨ Using auto-generated po_token_"
+                    f"👤 **Requested by:** {message.from_user.mention}"
                 )
+                
+                # Start monitoring for stream end
+                asyncio.create_task(monitor_stream(message.chat.id, audio_data['file_path']))
+                
             except Exception as e:
                 error_msg = str(e).lower()
                 
-                # Check for specific errors
                 if "no active" in error_msg or "group call" in error_msg:
                     await status_msg.edit("❌ **Please start a voice chat first!**")
-                elif "already" in error_msg:
-                    # Already in call, just playing worked
-                    await status_msg.edit(
-                        f"▶️ **Now Playing**\n\n"
-                        f"🎵 **Title:** {audio_data['title']}\n"
-                        f"👤 **Requested by:** {message.from_user.mention}"
-                    )
                 else:
                     await status_msg.edit(f"❌ **Error:** {str(e)}\n\nMake sure userbot is in the group!")
                 
-                # Cleanup on error
                 if os.path.exists(audio_data['file_path']):
                     os.remove(audio_data['file_path'])
                 if message.chat.id in current_playing:
@@ -284,6 +230,33 @@ async def play_command(client, message: Message):
                     
     except Exception as e:
         await status_msg.edit(f"❌ **Error:** {str(e)}")
+
+async def monitor_stream(chat_id: int, file_path: str):
+    """Monitor stream and play next when finished"""
+    try:
+        # Wait for the stream to finish
+        while chat_id in current_playing:
+            await asyncio.sleep(2)
+            
+            # Check if still playing
+            try:
+                # If we can't get stream info, it means it ended
+                await pytgcalls.get_call(chat_id)
+            except:
+                break
+        
+        # Clean up file
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except:
+                pass
+        
+        # Play next song
+        await play_next(chat_id)
+        
+    except Exception:
+        pass
 
 @app.on_message(filters.command("skip", config.COMMAND_PREFIXES) & filters.group)
 @error
@@ -297,7 +270,6 @@ async def skip_command(client, message: Message):
         await message.reply("❌ **Nothing is playing!**")
         return
     
-    # Clean up current file
     current_song = current_playing.get(chat_id)
     if current_song:
         file_path = current_song.get('file_path')
@@ -333,7 +305,6 @@ async def stop_command(client, message: Message):
         await message.reply("❌ **Nothing is playing!**")
         return
     
-    # Clean up current file
     current_song = current_playing.get(chat_id)
     if current_song:
         file_path = current_song.get('file_path')
@@ -343,7 +314,6 @@ async def stop_command(client, message: Message):
             except Exception:
                 pass
     
-    # Clear queue
     clear_queue(chat_id)
     
     try:
@@ -425,14 +395,8 @@ __help__ = """**🎵 Music Player Commands:**
 ✧ /stop - Stop music and leave voice chat
 ✧ /queue - Show current queue
 
-**🔥 Automatic Po_token Generation:**
-• No manual token copying needed!
-• RustyPipe generates fresh tokens automatically
-• Works indefinitely - no expiration issues!
-• No device mismatch problems
-
 **Requirements:**
 • Userbot must be in the group
 • Voice chat must be active
-• Uses py-tgcalls v1.2+ (NEW API)
+• Bot uses auto po_token generation
 """
