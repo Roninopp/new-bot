@@ -12,74 +12,111 @@ from pyrogram import filters, Client
 from pyrogram.types import Message
 
 # ==========================================
-# 🔧 CRITICAL: RUSTYPIPE SETUP (POTOKEN)
+# 🔧 CRITICAL: SETUP ENVIRONMENT (Node.js + Rustypipe)
 # ==========================================
-def setup_rustypipe():
+def setup_environment():
     """
-    Downloads Rustypipe binary.
+    Sets up the entire environment:
+    1. rustypipe-botguard (For PoTokens)
+    2. node (For executing JS challenges)
     """
-    binary_name = "rustypipe-botguard"
-    install_dir = os.path.join(os.getcwd(), "bin")
-    target_path = os.path.join(install_dir, binary_name)
-    
-    # URL that worked in your logs
-    URL_TO_TRY = "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz"
+    base_bin_dir = os.path.join(os.getcwd(), "bin")
+    if not os.path.exists(base_bin_dir):
+        os.makedirs(base_bin_dir, exist_ok=True)
 
-    if not os.path.exists(install_dir):
-        os.makedirs(install_dir, exist_ok=True)
+    # Add bin to PATH immediately so the rest of the script sees it
+    if base_bin_dir not in os.environ["PATH"]:
+        os.environ["PATH"] = base_bin_dir + os.pathsep + os.environ["PATH"]
+        print(f"✅ DEBUG: Added {base_bin_dir} to PATH")
 
-    # Add to PATH
-    if install_dir not in os.environ["PATH"]:
-        os.environ["PATH"] = install_dir + os.pathsep + os.environ["PATH"]
-        print(f"✅ DEBUG: Added {install_dir} to PATH")
-
-    # Check if exists
-    if os.path.exists(target_path):
+    # ---------------------------------------------------------
+    # 1. SETUP RUSTYPIPE (The Token Generator)
+    # ---------------------------------------------------------
+    rustypipe_path = os.path.join(base_bin_dir, "rustypipe-botguard")
+    if not os.path.exists(rustypipe_path):
+        print("⬇️ DEBUG: Downloading Rustypipe...")
+        # This is the Codeberg URL that worked in your logs
+        url = "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz"
         try:
-            res = subprocess.run([target_path, "--version"], capture_output=True, text=True)
-            if res.returncode == 0:
-                print(f"✅ DEBUG: Rustypipe is active: {res.stdout.strip()}")
-                return
-        except:
-            pass
+            r = requests.get(url, stream=True, timeout=20)
+            if r.status_code == 200:
+                with open("temp_rp.tar.xz", "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                
+                with tarfile.open("temp_rp.tar.xz", "r:xz") as tar:
+                    for member in tar.getnames():
+                        if "rustypipe-botguard" in member and "api" not in member:
+                            extracted = tar.extractfile(member)
+                            with open(rustypipe_path, "wb") as out:
+                                out.write(extracted.read())
+                            break
+                os.chmod(rustypipe_path, 0o755) # Make executable
+                print("✅ DEBUG: Rustypipe Installed.")
+            else:
+                print(f"❌ DEBUG: Rustypipe download failed: {r.status_code}")
+        except Exception as e:
+            print(f"❌ DEBUG: Rustypipe Setup Failed: {e}")
+        finally:
+            if os.path.exists("temp_rp.tar.xz"): os.remove("temp_rp.tar.xz")
 
-    print(f"⬇️ DEBUG: Downloading Rustypipe...")
+    # ---------------------------------------------------------
+    # 2. SETUP NODE.JS (The Puzzle Solver - Fixes "No JS runtime")
+    # ---------------------------------------------------------
+    node_path = os.path.join(base_bin_dir, "node")
+    # We check if 'node' works. If not, we download it.
+    node_working = False
     try:
-        response = requests.get(URL_TO_TRY, stream=True, timeout=20)
-        if response.status_code == 200:
-            with open("rp.tar.xz", 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            
-            # Extract
-            with tarfile.open("rp.tar.xz", "r:xz") as tar:
-                for member in tar.getnames():
-                    if "rustypipe-botguard" in member and "api" not in member:
-                        extracted = tar.extractfile(member)
-                        with open(target_path, 'wb') as out:
-                            out.write(extracted.read())
-                        break
-            
-            # Executable
-            st = os.stat(target_path)
-            os.chmod(target_path, st.st_mode | stat.S_IEXEC)
-            print("✅ DEBUG: Rustypipe installed successfully.")
-        else:
-            print(f"❌ DEBUG: Failed to download Rustypipe: {response.status_code}")
-    except Exception as e:
-        print(f"❌ DEBUG: Error setting up Rustypipe: {e}")
-    finally:
-        if os.path.exists("rp.tar.xz"): os.remove("rp.tar.xz")
+        if subprocess.run(["node", "-v"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+            node_working = True
+    except: pass
 
-# RUN SETUP
-setup_rustypipe()
+    if not node_working and not os.path.exists(node_path):
+        print("⬇️ DEBUG: Downloading Node.js (Required for YouTube)...")
+        # Downloading a standalone Linux binary for Node.js v18 (Stable)
+        node_url = "https://nodejs.org/dist/v18.16.0/node-v18.16.0-linux-x64.tar.xz"
+        try:
+            r = requests.get(node_url, stream=True, timeout=30)
+            if r.status_code == 200:
+                with open("temp_node.tar.xz", "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                
+                with tarfile.open("temp_node.tar.xz", "r:xz") as tar:
+                    # Look for bin/node inside the archive
+                    for member in tar.getnames():
+                        if member.endswith("/bin/node"):
+                            extracted = tar.extractfile(member)
+                            with open(node_path, "wb") as out:
+                                out.write(extracted.read())
+                            break
+                os.chmod(node_path, 0o755)
+                print("✅ DEBUG: Node.js Installed manually.")
+            else:
+                 print(f"❌ DEBUG: Node.js download failed: {r.status_code}")
+        except Exception as e:
+            print(f"❌ DEBUG: Node.js Setup Failed: {e}")
+        finally:
+            if os.path.exists("temp_node.tar.xz"): os.remove("temp_node.tar.xz")
 
-# Check Node.js (Diagnostic)
-try:
-    node_v = subprocess.getoutput("node --version")
-    print(f"✅ DEBUG: Node.js version: {node_v}")
-except:
-    print("❌ CRITICAL WARNING: Node.js is MISSING. Please add heroku/nodejs buildpack.")
+    # ---------------------------------------------------------
+    # 3. VERIFICATION
+    # ---------------------------------------------------------
+    print("\n🔍 SYSTEM CHECK:")
+    try:
+        rp_ver = subprocess.getoutput(f"{rustypipe_path} --version") if os.path.exists(rustypipe_path) else "MISSING"
+        print(f"   • Rustypipe: {rp_ver}")
+    except: pass
+    
+    try:
+        # We explicitly check the local bin node first
+        node_ver = subprocess.getoutput(f"{node_path} --version") if os.path.exists(node_path) else subprocess.getoutput("node --version")
+        print(f"   • Node.js:   {node_ver}")
+    except: print("   • Node.js:   MISSING")
+    print("-------------------------------------------\n")
+
+# RUN SETUP NOW
+setup_environment()
 
 # ==========================================
 # 📦 IMPORTS
@@ -117,7 +154,7 @@ def get_ydl_opts():
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
         'verbose': True,
         'quiet': False,
-        'no_warnings': True, # Warnings are distracting now, we know the issue
+        'no_warnings': True,
         'extract_flat': False,
         'geo_bypass': True,
         'nocheckcertificate': True,
