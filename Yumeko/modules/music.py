@@ -8,62 +8,74 @@ import logging
 from typing import Optional
 from pyrogram import filters, Client
 from pyrogram.types import Message
+from pytgcalls import PyTgCalls
+from pytgcalls.types import MediaStream, AudioQuality
 
 # ==========================================
-# 🔧 CRITICAL: INSTALL POTOKEN BEFORE IMPORTING YT-DLP
+# 🔧 CRITICAL: AUTO-FIX & INSTALL POTOKEN BINARY
 # ==========================================
 def setup_rustypipe():
     """
-    Installs RustyPipe binary AND sets up the PATH before yt-dlp loads.
-    This fixes the 'No valid binary found' error by ensuring the binary 
-    is ready before the library initializes.
+    Ensures the correct RustyPipe binary is installed and working.
+    If a broken binary exists, it deletes it and downloads the correct one.
     """
     binary_name = "rustypipe-botguard"
     install_dir = os.path.join(os.getcwd(), "bin")
     target_path = os.path.join(install_dir, binary_name)
     
-    # 1. Create bin directory
+    # 1. Setup PATH
     if not os.path.exists(install_dir):
         os.makedirs(install_dir, exist_ok=True)
 
-    # 2. Add to PATH immediately (Critical step)
-    # We add this to os.environ so any subprocess (like yt-dlp's plugin) can see it
     if install_dir not in os.environ["PATH"]:
         os.environ["PATH"] += os.pathsep + install_dir
         print(f"✅ DEBUG: Added {install_dir} to PATH")
 
-    # 3. Check/Download Binary
-    # We use the 'musl' version because it is static and works on all Linux (Heroku/Alpine/Ubuntu)
-    if not os.path.exists(target_path):
-        print(f"⚠️ DEBUG: RustyPipe not found. Downloading...")
-        url = "https://github.com/ThetaDev/rustypipe-botguard/releases/latest/download/rustypipe-botguard-x86_64-unknown-linux-musl"
+    # 2. Check if we need to download
+    need_download = True
+    
+    if os.path.exists(target_path):
+        print(f"🔍 DEBUG: Found existing binary at {target_path}. Testing it...")
+        try:
+            # Try to run it. If it fails or returns error, it's the wrong arch/corrupt.
+            result = subprocess.run([target_path, "--version"], capture_output=True, text=True)
+            if result.returncode == 0 and "rustypipe" in result.stdout:
+                print(f"✅ DEBUG: Existing binary is VALID: {result.stdout.strip()}")
+                need_download = False
+            else:
+                print(f"⚠️ DEBUG: Existing binary is BROKEN (Code {result.returncode}). Deleting...")
+                os.remove(target_path)
+        except Exception as e:
+            print(f"⚠️ DEBUG: Existing binary crashed ({e}). Deleting...")
+            try:
+                os.remove(target_path)
+            except:
+                pass
+
+    # 3. Download if missing or broken
+    if need_download:
+        print(f"⬇️ DEBUG: Downloading new RustyPipe (GNU Version)...")
+        # Switching to LINUX-GNU because your logs show 'glibc 2.39' (Ubuntu/Debian based)
+        url = "https://github.com/ThetaDev/rustypipe-botguard/releases/latest/download/rustypipe-botguard-x86_64-unknown-linux-gnu"
         
         try:
             subprocess.run(["curl", "-L", "-o", target_path, url], check=True)
             st = os.stat(target_path)
             os.chmod(target_path, st.st_mode | stat.S_IEXEC)
-            print(f"✅ DEBUG: Installed RustyPipe at {target_path}")
+            
+            # Final verification
+            test = subprocess.run([target_path, "--version"], capture_output=True, text=True)
+            print(f"✅ DEBUG: New binary installed and verified: {test.stdout.strip()}")
         except Exception as e:
             print(f"❌ DEBUG: Failed to install: {e}")
-            return
 
-    # 4. DIAGNOSIS: Run it to prove it works
-    try:
-        # We run it with --version to see if it's compatible
-        result = subprocess.run([target_path, "--version"], capture_output=True, text=True)
-        print(f"✅ DEBUG: Binary Verification: {result.stdout.strip() if result.stdout else 'No output'}")
-    except Exception as e:
-        print(f"❌ DEBUG: Binary is present but CRASHED: {e}")
-
-# --- RUN SETUP NOW (BEFORE IMPORTS) ---
+# --- RUN SETUP BEFORE IMPORTS ---
 setup_rustypipe()
 
 # ==========================================
-# 📦 NOW IMPORT YT-DLP (It will see the binary now)
+# 📦 NOW IMPORT YT-DLP
 # ==========================================
 import yt_dlp
-from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream, AudioQuality
 from Yumeko import app
 from config import config
 from Yumeko.decorator.save import save
@@ -129,14 +141,6 @@ async def download_audio(url: str) -> dict:
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            # Debug: Check if plugin is effectively loaded
-            try:
-                # We try to import the plugin to confirm it's available in python path
-                import yt_dlp_plugins.extractor.rustypipe
-                print("✅ DEBUG: RustyPipe plugin module detected.")
-            except ImportError:
-                print("⚠️ DEBUG: Plugin module not directly importable (Normal for pip plugins).")
-
             info = await asyncio.to_thread(ydl.extract_info, url, download=True)
             
             if 'entries' in info:
@@ -296,7 +300,6 @@ async def play_command(client, message: Message):
                     f"👤 **Requested by:** {message.from_user.mention}"
                 )
                 
-                # Start monitoring for stream end
                 asyncio.create_task(monitor_stream(message.chat.id, audio_data['file_path']))
                 
             except Exception as e:
@@ -317,7 +320,6 @@ async def play_command(client, message: Message):
 async def monitor_stream(chat_id: int, file_path: str):
     """Monitor stream and play next when finished"""
     try:
-        # Wait for the stream to finish
         while chat_id in current_playing:
             await asyncio.sleep(2)
             try:
@@ -325,14 +327,12 @@ async def monitor_stream(chat_id: int, file_path: str):
             except:
                 break
         
-        # Clean up file
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
             except:
                 pass
         
-        # Play next song
         await play_next(chat_id)
         
     except Exception:
