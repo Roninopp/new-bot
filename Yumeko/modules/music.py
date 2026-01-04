@@ -4,8 +4,8 @@ import re
 from typing import Optional
 from pyrogram import filters, Client
 from pyrogram.types import Message
-from pytgcalls import PyTgCalls, StreamType
-from pytgcalls.types import AudioPiped, Update
+from pytgcalls import PyTgCalls
+from pytgcalls.types import MediaStream, AudioQuality
 from pytgcalls.exceptions import NoActiveGroupCall, AlreadyJoinedError
 import yt_dlp
 from Yumeko import app
@@ -21,7 +21,7 @@ userbot = Client(
     session_string=config.USERBOT_SESSION
 )
 
-# Initialize PyTgCalls with USERBOT (not bot!)
+# Initialize PyTgCalls with USERBOT (NEW API v1.2+)
 pytgcalls = PyTgCalls(userbot)
 
 # Queue system
@@ -144,7 +144,7 @@ async def play_next(chat_id: int):
     if not queue:
         # Queue is empty, leave call
         try:
-            await pytgcalls.leave_group_call(chat_id)
+            await pytgcalls.leave_call(chat_id)
         except Exception:
             pass
         if chat_id in current_playing:
@@ -156,25 +156,20 @@ async def play_next(chat_id: int):
     current_playing[chat_id] = next_song
     
     try:
-        await pytgcalls.change_stream(
+        # NEW API v1.2+ uses MediaStream
+        await pytgcalls.play(
             chat_id,
-            AudioPiped(next_song['file_path'])
+            MediaStream(
+                next_song['file_path'],
+                audio_parameters=AudioQuality.HIGH
+            )
         )
     except Exception:
-        # If change_stream fails, try play
-        try:
-            await pytgcalls.play(
-                chat_id,
-                AudioPiped(next_song['file_path']),
-                stream_type=StreamType().pulse_stream
-            )
-        except Exception:
-            await play_next(chat_id)
+        await play_next(chat_id)
 
 @pytgcalls.on_stream_end()
-async def on_stream_end(client: PyTgCalls, update: Update):
-    """Handle stream end event"""
-    chat_id = update.chat_id
+async def on_stream_end(client: PyTgCalls, chat_id: int):
+    """Handle stream end event (NEW API v1.2+)"""
     
     # Clean up current file
     if chat_id in current_playing:
@@ -248,10 +243,13 @@ async def play_command(client, message: Message):
             await status_msg.edit("🎵 **Joining voice chat...**")
             
             try:
+                # NEW API v1.2+ - Use MediaStream
                 await pytgcalls.play(
                     message.chat.id,
-                    AudioPiped(audio_data['file_path']),
-                    stream_type=StreamType().pulse_stream
+                    MediaStream(
+                        audio_data['file_path'],
+                        audio_parameters=AudioQuality.HIGH
+                    )
                 )
                 
                 duration_str = f"{audio_data['duration'] // 60}:{audio_data['duration'] % 60:02d}" if audio_data['duration'] else "Unknown"
@@ -270,10 +268,13 @@ async def play_command(client, message: Message):
                 if message.chat.id in current_playing:
                     del current_playing[message.chat.id]
             except AlreadyJoinedError:
-                # Already in call, try to change stream
-                await pytgcalls.change_stream(
+                # Already in call, try to play
+                await pytgcalls.play(
                     message.chat.id,
-                    AudioPiped(audio_data['file_path'])
+                    MediaStream(
+                        audio_data['file_path'],
+                        audio_parameters=AudioQuality.HIGH
+                    )
                 )
                 await status_msg.edit(
                     f"▶️ **Now Playing**\n\n"
@@ -317,7 +318,7 @@ async def skip_command(client, message: Message):
     if not queue:
         await message.reply("⏭️ **Skipped! No more songs in queue.**")
         try:
-            await pytgcalls.leave_group_call(chat_id)
+            await pytgcalls.leave_call(chat_id)
         except Exception:
             pass
         if chat_id in current_playing:
@@ -352,8 +353,44 @@ async def stop_command(client, message: Message):
     clear_queue(chat_id)
     
     try:
-        await pytgcalls.leave_group_call(chat_id)
+        await pytgcalls.leave_call(chat_id)
         await message.reply("⏹️ **Stopped and left voice chat!**")
+    except Exception as e:
+        await message.reply(f"❌ **Error:** {str(e)}")
+
+@app.on_message(filters.command("pause", config.COMMAND_PREFIXES) & filters.group)
+@error
+@save
+async def pause_command(client, message: Message):
+    """Pause current song"""
+    
+    chat_id = message.chat.id
+    
+    if chat_id not in current_playing:
+        await message.reply("❌ **Nothing is playing!**")
+        return
+    
+    try:
+        await pytgcalls.pause_stream(chat_id)
+        await message.reply("⏸️ **Paused!**")
+    except Exception as e:
+        await message.reply(f"❌ **Error:** {str(e)}")
+
+@app.on_message(filters.command("resume", config.COMMAND_PREFIXES) & filters.group)
+@error
+@save
+async def resume_command(client, message: Message):
+    """Resume paused song"""
+    
+    chat_id = message.chat.id
+    
+    if chat_id not in current_playing:
+        await message.reply("❌ **Nothing is playing!**")
+        return
+    
+    try:
+        await pytgcalls.resume_stream(chat_id)
+        await message.reply("▶️ **Resumed!**")
     except Exception as e:
         await message.reply(f"❌ **Error:** {str(e)}")
 
@@ -389,6 +426,8 @@ __help__ = """**🎵 Music Player Commands:**
 
 ✧ /play <query or URL> - Play a song in voice chat
 ✧ /skip - Skip current song
+✧ /pause - Pause current song
+✧ /resume - Resume paused song
 ✧ /stop - Stop music and leave voice chat
 ✧ /queue - Show current queue
 
@@ -401,5 +440,5 @@ __help__ = """**🎵 Music Player Commands:**
 **Requirements:**
 • Userbot must be in the group
 • Voice chat must be active
-• RustyPipe installed (auto via Dockerfile)
+• Uses py-tgcalls v1.2+ (NEW API)
 """
