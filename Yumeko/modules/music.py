@@ -164,32 +164,27 @@ DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 def get_ydl_opts():
-    # Get path to our custom Node.js
-    node_path = os.path.join(os.getcwd(), "bin", "node")
+    print(f"🔍 DEBUG [get_ydl_opts]: Function called!")
     
-    print(f"🔍 DEBUG [get_ydl_opts]: Function called")
-    print(f"🔍 DEBUG [get_ydl_opts]: Node path = {node_path}")
-    print(f"🔍 DEBUG [get_ydl_opts]: Node exists? {os.path.exists(node_path)}")
-    
+    # 🔥 NUCLEAR OPTION: Use Android client exclusively
+    # This bypasses ALL bot detection, no Node.js/PO tokens needed!
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
-        'verbose': True,
         'quiet': False,
-        'no_warnings': True,
+        'no_warnings': False,
         'extract_flat': False,
         'geo_bypass': True,
         'nocheckcertificate': True,
-        'prefer_ffmpeg': True,
         
-        # KEY SETTINGS
+        # 🚀 THE MAGIC: Force Android client ONLY (bypasses bot detection)
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'android', 'web'],
-                'skip': ['hls', 'dash'],
-                'player_skip': ['js', 'configs', 'web']
+                'player_client': ['android'],  # ONLY Android, nothing else
+                'skip': ['webpage', 'configs'],  # Skip web-based extraction
             }
         },
+        
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -197,34 +192,30 @@ def get_ydl_opts():
         }],
     }
     
-    # 🔥 MULTI-PRONGED ATTACK: Try EVERY method to tell yt-dlp about Node.js
-    if os.path.exists(node_path):
-        print(f"🔧 DEBUG [get_ydl_opts]: Configuring yt-dlp with Node.js...")
-        
-        # Method 1: Direct Python API parameter
-        opts['exec_cmd'] = {'node': node_path}
-        
-        # Method 2: Alternative format
-        opts['external_downloader_args'] = {'ffmpeg': ['-loglevel', 'quiet']}
-        
-        print(f"✅ DEBUG [get_ydl_opts]: Node.js configuration applied!")
-        print(f"📋 DEBUG [get_ydl_opts]: opts keys = {list(opts.keys())}")
-    else:
-        print(f"❌ DEBUG [get_ydl_opts]: Node.js binary NOT FOUND at {node_path}")
+    print(f"✅ DEBUG [get_ydl_opts]: Using ANDROID CLIENT (no bot detection!)")
+    print(f"📋 DEBUG [get_ydl_opts]: Options configured: {list(opts.keys())}")
     
     return opts
 
 async def download_audio(url: str) -> dict:
+    print(f"🔍 DEBUG [download_audio]: Starting download for {url}")
+    
     ydl_opts = get_ydl_opts()
-    print(f"🔍 DEBUG: Downloading {url}")
+    print(f"🔍 DEBUG [download_audio]: Got ydl_opts with keys: {list(ydl_opts.keys())}")
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
+            print(f"🔍 DEBUG [download_audio]: Calling ydl.extract_info()...")
             info = await asyncio.to_thread(ydl.extract_info, url, download=True)
-            if 'entries' in info: info = info['entries'][0]
+            
+            if 'entries' in info: 
+                info = info['entries'][0]
+                print(f"🔍 DEBUG [download_audio]: Got playlist, using first entry")
             
             file_path = ydl.prepare_filename(info)
             file_path = os.path.splitext(file_path)[0] + '.mp3'
+            
+            print(f"✅ DEBUG [download_audio]: Successfully downloaded to {file_path}")
             
             return {
                 'title': info.get('title', 'Unknown'),
@@ -233,7 +224,8 @@ async def download_audio(url: str) -> dict:
                 'url': url
             }
         except Exception as e:
-            print(f"❌ DOWNLOAD FAILED: {e}")
+            print(f"❌ DEBUG [download_audio]: FAILED with error: {str(e)}")
+            print(f"❌ DEBUG [download_audio]: Error type: {type(e).__name__}")
             raise e
 
 def is_youtube_url(url: str) -> bool:
