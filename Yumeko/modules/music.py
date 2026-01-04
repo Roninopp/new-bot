@@ -6,7 +6,6 @@ from pyrogram import filters, Client
 from pyrogram.types import Message
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality
-from pytgcalls.exceptions import NoActiveGroupCall, AlreadyJoinedError
 import yt_dlp
 from Yumeko import app
 from config import config
@@ -261,28 +260,23 @@ async def play_command(client, message: Message):
                     f"👤 **Requested by:** {message.from_user.mention}\n\n"
                     f"_✨ Using auto-generated po_token_"
                 )
-            except NoActiveGroupCall:
-                await status_msg.edit("❌ **Please start a voice chat first!**")
-                if os.path.exists(audio_data['file_path']):
-                    os.remove(audio_data['file_path'])
-                if message.chat.id in current_playing:
-                    del current_playing[message.chat.id]
-            except AlreadyJoinedError:
-                # Already in call, try to play
-                await pytgcalls.play(
-                    message.chat.id,
-                    MediaStream(
-                        audio_data['file_path'],
-                        audio_parameters=AudioQuality.HIGH
-                    )
-                )
-                await status_msg.edit(
-                    f"▶️ **Now Playing**\n\n"
-                    f"🎵 **Title:** {audio_data['title']}\n"
-                    f"👤 **Requested by:** {message.from_user.mention}"
-                )
             except Exception as e:
-                await status_msg.edit(f"❌ **Error:** {str(e)}\n\nMake sure userbot is in the group!")
+                error_msg = str(e).lower()
+                
+                # Check for specific errors
+                if "no active" in error_msg or "group call" in error_msg:
+                    await status_msg.edit("❌ **Please start a voice chat first!**")
+                elif "already" in error_msg:
+                    # Already in call, just playing worked
+                    await status_msg.edit(
+                        f"▶️ **Now Playing**\n\n"
+                        f"🎵 **Title:** {audio_data['title']}\n"
+                        f"👤 **Requested by:** {message.from_user.mention}"
+                    )
+                else:
+                    await status_msg.edit(f"❌ **Error:** {str(e)}\n\nMake sure userbot is in the group!")
+                
+                # Cleanup on error
                 if os.path.exists(audio_data['file_path']):
                     os.remove(audio_data['file_path'])
                 if message.chat.id in current_playing:
