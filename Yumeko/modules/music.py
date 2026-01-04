@@ -8,8 +8,6 @@ import logging
 from typing import Optional
 from pyrogram import filters, Client
 from pyrogram.types import Message
-from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream, AudioQuality
 
 # ==========================================
 # 🔧 CRITICAL: INSTALL POTOKEN BEFORE IMPORTING YT-DLP
@@ -17,6 +15,8 @@ from pytgcalls.types import MediaStream, AudioQuality
 def setup_rustypipe():
     """
     Installs RustyPipe binary AND sets up the PATH before yt-dlp loads.
+    This fixes the 'No valid binary found' error by ensuring the binary 
+    is ready before the library initializes.
     """
     binary_name = "rustypipe-botguard"
     install_dir = os.path.join(os.getcwd(), "bin")
@@ -27,14 +27,15 @@ def setup_rustypipe():
         os.makedirs(install_dir, exist_ok=True)
 
     # 2. Add to PATH immediately (Critical step)
+    # We add this to os.environ so any subprocess (like yt-dlp's plugin) can see it
     if install_dir not in os.environ["PATH"]:
         os.environ["PATH"] += os.pathsep + install_dir
         print(f"✅ DEBUG: Added {install_dir} to PATH")
 
     # 3. Check/Download Binary
+    # We use the 'musl' version because it is static and works on all Linux (Heroku/Alpine/Ubuntu)
     if not os.path.exists(target_path):
         print(f"⚠️ DEBUG: RustyPipe not found. Downloading...")
-        # URL for the STATIC (Musl) version - Works on all Linux distros
         url = "https://github.com/ThetaDev/rustypipe-botguard/releases/latest/download/rustypipe-botguard-x86_64-unknown-linux-musl"
         
         try:
@@ -50,15 +51,19 @@ def setup_rustypipe():
     try:
         # We run it with --version to see if it's compatible
         result = subprocess.run([target_path, "--version"], capture_output=True, text=True)
-        print(f"✅ DEBUG: Binary Test Output: {result.stdout.strip() if result.stdout else result.stderr}")
+        print(f"✅ DEBUG: Binary Verification: {result.stdout.strip() if result.stdout else 'No output'}")
     except Exception as e:
         print(f"❌ DEBUG: Binary is present but CRASHED: {e}")
 
-# --- RUN SETUP NOW ---
+# --- RUN SETUP NOW (BEFORE IMPORTS) ---
 setup_rustypipe()
 
-# --- NOW IMPORT YT-DLP (It will see the binary now) ---
+# ==========================================
+# 📦 NOW IMPORT YT-DLP (It will see the binary now)
+# ==========================================
 import yt_dlp
+from pytgcalls import PyTgCalls
+from pytgcalls.types import MediaStream, AudioQuality
 from Yumeko import app
 from config import config
 from Yumeko.decorator.save import save
@@ -76,7 +81,7 @@ userbot = Client(
     session_string=config.USERBOT_SESSION
 )
 
-# Initialize PyTgCalls
+# Initialize PyTgCalls with USERBOT
 pytgcalls = PyTgCalls(userbot)
 
 # Queue system
@@ -100,7 +105,7 @@ def get_ydl_opts():
         'nocheckcertificate': True,
         'prefer_ffmpeg': True,
         
-        # Force iOS to use the Token
+        # FORCE iOS CLIENT (Triggers PoToken)
         'extractor_args': {
             'youtube': {
                 'player_client': ['ios', 'web'],
@@ -108,6 +113,7 @@ def get_ydl_opts():
                 'player_skip': ['js', 'configs', 'web']
             }
         },
+        
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -117,19 +123,19 @@ def get_ydl_opts():
     return opts
 
 async def download_audio(url: str) -> dict:
+    """Download audio from YouTube using yt-dlp"""
     ydl_opts = get_ydl_opts()
     print(f"🔍 DEBUG: Starting download for: {url}")
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            # Debugging the Plugin Load Status
-            print(f"🔍 DEBUG: yt-dlp version: {yt_dlp.version.__version__}")
+            # Debug: Check if plugin is effectively loaded
             try:
-                # Check if extractors loaded correctly
+                # We try to import the plugin to confirm it's available in python path
                 import yt_dlp_plugins.extractor.rustypipe
-                print("✅ DEBUG: RustyPipe plugin module is importable.")
+                print("✅ DEBUG: RustyPipe plugin module detected.")
             except ImportError:
-                print("⚠️ DEBUG: Plugin module not directly importable (might be internal).")
+                print("⚠️ DEBUG: Plugin module not directly importable (Normal for pip plugins).")
 
             info = await asyncio.to_thread(ydl.extract_info, url, download=True)
             
@@ -139,6 +145,8 @@ async def download_audio(url: str) -> dict:
             file_path = ydl.prepare_filename(info)
             file_path = os.path.splitext(file_path)[0] + '.mp3'
             
+            print(f"✅ DEBUG: Download successful: {file_path}")
+            
             return {
                 'title': info.get('title', 'Unknown'),
                 'duration': info.get('duration', 0),
@@ -147,15 +155,25 @@ async def download_audio(url: str) -> dict:
                 'url': url
             }
         except Exception as e:
-            print(f"❌ DEBUG: Download failed: {str(e)}")
+            print(f"❌ DEBUG: Download failed with error: {str(e)}")
             raise Exception(f"Download failed: {str(e)}")
 
 def is_youtube_url(url: str) -> bool:
+    """Check if URL is a valid YouTube URL"""
     youtube_regex = r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/'
     return bool(re.match(youtube_regex, url))
 
 async def search_youtube(query: str) -> Optional[str]:
-    ydl_opts = {'format': 'bestaudio', 'noplaylist': True, 'quiet': True, 'default_search': 'ytsearch', 'extract_flat': True}
+    """Search YouTube and return first result URL"""
+    ydl_opts = {
+        'format': 'bestaudio',
+        'noplaylist': True,
+        'quiet': True,
+        'no_warnings': True,
+        'default_search': 'ytsearch',
+        'extract_flat': True
+    }
+    
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = await asyncio.to_thread(ydl.extract_info, f"ytsearch:{query}", download=False)
@@ -166,21 +184,26 @@ async def search_youtube(query: str) -> Optional[str]:
     return None
 
 def add_to_queue(chat_id: int, song_data: dict):
+    """Add song to queue"""
     if chat_id not in music_queue:
         music_queue[chat_id] = []
     music_queue[chat_id].append(song_data)
 
 def get_queue(chat_id: int) -> list:
+    """Get current queue"""
     return music_queue.get(chat_id, [])
 
 def clear_queue(chat_id: int):
+    """Clear queue for chat"""
     if chat_id in music_queue:
         music_queue[chat_id] = []
     if chat_id in current_playing:
         del current_playing[chat_id]
 
 async def play_next(chat_id: int):
+    """Play next song in queue"""
     queue = get_queue(chat_id)
+    
     if not queue:
         try:
             await pytgcalls.leave_call(chat_id)
@@ -196,7 +219,10 @@ async def play_next(chat_id: int):
     try:
         await pytgcalls.play(
             chat_id,
-            MediaStream(next_song['file_path'], audio_parameters=AudioQuality.HIGH)
+            MediaStream(
+                next_song['file_path'],
+                audio_parameters=AudioQuality.HIGH
+            )
         )
     except Exception:
         await play_next(chat_id)
@@ -205,8 +231,15 @@ async def play_next(chat_id: int):
 @error
 @save
 async def play_command(client, message: Message):
+    """Play music in voice chat"""
+    
     if len(message.command) < 2:
-        await message.reply("**Usage:** `/play <song name>`")
+        await message.reply(
+            "**Usage:** `/play <YouTube URL or search query>`\n\n"
+            "**Examples:**\n"
+            "`/play shape of you`\n"
+            "`/play https://youtu.be/...`"
+        )
         return
     
     query = message.text.split(maxsplit=1)[1]
@@ -222,6 +255,7 @@ async def play_command(client, message: Message):
                 return
         
         await status_msg.edit("⏬ **Downloading...**")
+        
         audio_data = await download_audio(url)
         
         song_info = {
@@ -234,7 +268,12 @@ async def play_command(client, message: Message):
         
         if message.chat.id in current_playing:
             add_to_queue(message.chat.id, song_info)
-            await status_msg.edit(f"✅ **Added to queue:** {audio_data['title']}")
+            queue_position = len(get_queue(message.chat.id))
+            await status_msg.edit(
+                f"✅ **Added to queue at position #{queue_position}**\n\n"
+                f"🎵 **Title:** {audio_data['title']}\n"
+                f"👤 **Requested by:** {message.from_user.mention}"
+            )
         else:
             current_playing[message.chat.id] = song_info
             await status_msg.edit("🎵 **Joining voice chat...**")
@@ -242,28 +281,60 @@ async def play_command(client, message: Message):
             try:
                 await pytgcalls.play(
                     message.chat.id,
-                    MediaStream(audio_data['file_path'], audio_parameters=AudioQuality.HIGH)
+                    MediaStream(
+                        audio_data['file_path'],
+                        audio_parameters=AudioQuality.HIGH
+                    )
                 )
-                await status_msg.edit(f"▶️ **Now Playing:** {audio_data['title']}")
-                asyncio.create_task(monitor_stream(message.chat.id, audio_data['file_path']))
-            except Exception as e:
-                await status_msg.edit(f"❌ **Error:** {e}")
                 
+                duration_str = f"{audio_data['duration'] // 60}:{audio_data['duration'] % 60:02d}" if audio_data['duration'] else "Unknown"
+                
+                await status_msg.edit(
+                    f"▶️ **Now Playing**\n\n"
+                    f"🎵 **Title:** {audio_data['title']}\n"
+                    f"⏱️ **Duration:** {duration_str}\n"
+                    f"👤 **Requested by:** {message.from_user.mention}"
+                )
+                
+                # Start monitoring for stream end
+                asyncio.create_task(monitor_stream(message.chat.id, audio_data['file_path']))
+                
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no active" in error_msg or "group call" in error_msg:
+                    await status_msg.edit("❌ **Please start a voice chat first!**")
+                else:
+                    await status_msg.edit(f"❌ **Error:** {str(e)}\n\nMake sure userbot is in the group!")
+                
+                if os.path.exists(audio_data['file_path']):
+                    os.remove(audio_data['file_path'])
+                if message.chat.id in current_playing:
+                    del current_playing[message.chat.id]
+                    
     except Exception as e:
         await status_msg.edit(f"❌ **Error:** {str(e)}")
 
 async def monitor_stream(chat_id: int, file_path: str):
+    """Monitor stream and play next when finished"""
     try:
+        # Wait for the stream to finish
         while chat_id in current_playing:
             await asyncio.sleep(2)
             try:
                 await pytgcalls.get_call(chat_id)
             except:
                 break
+        
+        # Clean up file
         if os.path.exists(file_path):
-            try: os.remove(file_path)
-            except: pass
+            try:
+                os.remove(file_path)
+            except:
+                pass
+        
+        # Play next song
         await play_next(chat_id)
+        
     except Exception:
         pass
 
@@ -271,25 +342,124 @@ async def monitor_stream(chat_id: int, file_path: str):
 @error
 @save
 async def skip_command(client, message: Message):
+    """Skip current song"""
     chat_id = message.chat.id
-    if chat_id in current_playing:
-        await message.reply("⏭️ **Skipped!**")
-        await play_next(chat_id)
+    if chat_id not in current_playing:
+        await message.reply("❌ **Nothing is playing!**")
+        return
+    
+    current_song = current_playing.get(chat_id)
+    if current_song:
+        file_path = current_song.get('file_path')
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+    
+    queue = get_queue(chat_id)
+    if not queue:
+        await message.reply("⏭️ **Skipped! No more songs in queue.**")
+        try:
+            await pytgcalls.leave_call(chat_id)
+        except Exception:
+            pass
+        if chat_id in current_playing:
+            del current_playing[chat_id]
     else:
-        await message.reply("❌ **Nothing playing.**")
+        await message.reply("⏭️ **Skipped! Playing next song...**")
+        await play_next(chat_id)
 
 @app.on_message(filters.command("stop", config.COMMAND_PREFIXES) & filters.group)
 @error
 @save
 async def stop_command(client, message: Message):
+    """Stop music and clear queue"""
     chat_id = message.chat.id
+    if chat_id not in current_playing:
+        await message.reply("❌ **Nothing is playing!**")
+        return
+    
+    current_song = current_playing.get(chat_id)
+    if current_song:
+        file_path = current_song.get('file_path')
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+    
     clear_queue(chat_id)
     try:
         await pytgcalls.leave_call(chat_id)
-        await message.reply("⏹️ **Stopped.**")
-    except:
-        await message.reply("❌ **Not connected.**")
+        await message.reply("⏹️ **Stopped and left voice chat!**")
+    except Exception as e:
+        await message.reply(f"❌ **Error:** {str(e)}")
+
+@app.on_message(filters.command("pause", config.COMMAND_PREFIXES) & filters.group)
+@error
+@save
+async def pause_command(client, message: Message):
+    """Pause current song"""
+    chat_id = message.chat.id
+    if chat_id not in current_playing:
+        await message.reply("❌ **Nothing is playing!**")
+        return
+    try:
+        await pytgcalls.pause_stream(chat_id)
+        await message.reply("⏸️ **Paused!**")
+    except Exception as e:
+        await message.reply(f"❌ **Error:** {str(e)}")
+
+@app.on_message(filters.command("resume", config.COMMAND_PREFIXES) & filters.group)
+@error
+@save
+async def resume_command(client, message: Message):
+    """Resume paused song"""
+    chat_id = message.chat.id
+    if chat_id not in current_playing:
+        await message.reply("❌ **Nothing is playing!**")
+        return
+    try:
+        await pytgcalls.resume_stream(chat_id)
+        await message.reply("▶️ **Resumed!**")
+    except Exception as e:
+        await message.reply(f"❌ **Error:** {str(e)}")
+
+@app.on_message(filters.command("queue", config.COMMAND_PREFIXES) & filters.group)
+@error
+@save
+async def queue_command(client, message: Message):
+    """Show current queue"""
+    chat_id = message.chat.id
+    if chat_id not in current_playing:
+        await message.reply("❌ **Nothing is playing!**")
+        return
+    
+    current = current_playing[chat_id]
+    queue = get_queue(chat_id)
+    text = f"▶️ **Now Playing:**\n🎵 {current['title']}\n\n"
+    if queue:
+        text += "📝 **Queue:**\n"
+        for i, song in enumerate(queue, 1):
+            text += f"{i}. {song['title']}\n"
+    else:
+        text += "📝 **Queue is empty!**"
+    await message.reply(text)
 
 # Module info
 __module__ = "Music"
-__help__ = """**🎵 Music Player**\n\n/play <song>\n/skip\n/stop"""
+__help__ = """**🎵 Music Player Commands:**
+
+✧ /play <query or URL> - Play a song in voice chat
+✧ /skip - Skip current song
+✧ /pause - Pause current song
+✧ /resume - Resume paused song
+✧ /stop - Stop music and leave voice chat
+✧ /queue - Show current queue
+
+**Requirements:**
+• Userbot must be in the group
+• Voice chat must be active
+• Bot uses auto po_token generation
+"""
