@@ -7,134 +7,106 @@ import subprocess
 import logging
 import requests
 import tarfile
+import zipfile
+import sys
 from typing import Optional
 from pyrogram import filters, Client
 from pyrogram.types import Message
 
 # ==========================================
-# 🔧 CRITICAL: SETUP ENVIRONMENT (Node.js v20 + Rustypipe)
+# 🛠️ SUPER DEBUG & INSTALLER (Deno + Rustypipe)
 # ==========================================
 def setup_environment():
     """
-    Sets up the entire environment:
-    1. rustypipe-botguard (For PoTokens)
-    2. node (v20+ Required for yt-dlp)
+    Installs Deno (Default JS Engine for yt-dlp) and Rustypipe (PoToken).
     """
     base_bin_dir = os.path.join(os.getcwd(), "bin")
     if not os.path.exists(base_bin_dir):
         os.makedirs(base_bin_dir, exist_ok=True)
 
-    # 1. FORCE PATH UPDATE (Put our bin FIRST)
-    current_path = os.environ.get("PATH", "")
-    if base_bin_dir not in current_path:
-        os.environ["PATH"] = base_bin_dir + os.pathsep + current_path
-        print(f"✅ DEBUG: Prepend {base_bin_dir} to PATH")
+    # 1. ADD TO PATH
+    if base_bin_dir not in os.environ["PATH"]:
+        os.environ["PATH"] = base_bin_dir + os.pathsep + os.environ["PATH"]
+
+    print(f"\n[DEBUG] 📂 PATH Configured: {base_bin_dir}")
 
     # ---------------------------------------------------------
-    # 2. SETUP RUSTYPIPE (The Token Generator)
+    # 2. INSTALL DENO (The "Brain" - Default in new yt-dlp)
     # ---------------------------------------------------------
-    rustypipe_path = os.path.join(base_bin_dir, "rustypipe-botguard")
-    if not os.path.exists(rustypipe_path):
-        print("⬇️ DEBUG: Downloading Rustypipe...")
-        # Using the specific Codeberg URL that worked
-        url = "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz"
+    deno_path = os.path.join(base_bin_dir, "deno")
+    if not os.path.exists(deno_path):
+        print("[DEBUG] ⬇️ Downloading Deno (JS Runtime)...")
+        # Downloading Deno v1.40.0 (Stable Linux x64)
+        deno_url = "https://github.com/denoland/deno/releases/download/v1.40.0/deno-x86_64-unknown-linux-gnu.zip"
         try:
-            r = requests.get(url, stream=True, timeout=20)
+            r = requests.get(deno_url, stream=True, timeout=30)
             if r.status_code == 200:
-                with open("temp_rp.tar.xz", "wb") as f:
+                with open("deno.zip", "wb") as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
                 
-                with tarfile.open("temp_rp.tar.xz", "r:xz") as tar:
-                    for member in tar.getnames():
-                        if "rustypipe-botguard" in member and "api" not in member:
-                            extracted = tar.extractfile(member)
-                            with open(rustypipe_path, "wb") as out:
-                                out.write(extracted.read())
-                            break
-                os.chmod(rustypipe_path, 0o755) 
-                print("✅ DEBUG: Rustypipe Installed.")
+                with zipfile.ZipFile("deno.zip", 'r') as zip_ref:
+                    zip_ref.extractall(base_bin_dir)
+                
+                os.chmod(deno_path, 0o755)
+                print("[DEBUG] ✅ Deno Installed.")
             else:
-                print(f"❌ DEBUG: Rustypipe download failed: {r.status_code}")
+                print(f"[DEBUG] ❌ Deno Download Failed: {r.status_code}")
         except Exception as e:
-            print(f"❌ DEBUG: Rustypipe Setup Failed: {e}")
+            print(f"[DEBUG] ❌ Deno Setup Error: {e}")
         finally:
-            if os.path.exists("temp_rp.tar.xz"): os.remove("temp_rp.tar.xz")
+            if os.path.exists("deno.zip"): os.remove("deno.zip")
 
     # ---------------------------------------------------------
-    # 3. SETUP NODE.JS (UPDATED TO v20 for yt-dlp support)
+    # 3. INSTALL RUSTYPIPE (The "License" - PoToken)
     # ---------------------------------------------------------
-    node_path = os.path.join(base_bin_dir, "node")
+    rp_path = os.path.join(base_bin_dir, "rustypipe-botguard")
+    if not os.path.exists(rp_path):
+        print("[DEBUG] ⬇️ Downloading Rustypipe...")
+        rp_url = "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz"
+        try:
+            r = requests.get(rp_url, stream=True, timeout=30)
+            with open("rp.tar.xz", "wb") as f:
+                f.write(r.content)
+            
+            with tarfile.open("rp.tar.xz", "r:xz") as tar:
+                for member in tar.getnames():
+                    if "rustypipe-botguard" in member and "api" not in member:
+                        extracted = tar.extractfile(member)
+                        with open(rp_path, "wb") as out:
+                            out.write(extracted.read())
+                        break
+            os.chmod(rp_path, 0o755)
+            print("[DEBUG] ✅ Rustypipe Installed.")
+        except Exception as e:
+            print(f"[DEBUG] ❌ Rustypipe Setup Error: {e}")
+        finally:
+            if os.path.exists("rp.tar.xz"): os.remove("rp.tar.xz")
+
+    # ---------------------------------------------------------
+    # 4. FINAL DIAGNOSTIC REPORT
+    # ---------------------------------------------------------
+    print("\n" + "="*40)
+    print("       🧬 STARTUP DIAGNOSTICS       ")
+    print("="*40)
     
-    # Check if node exists and is version 20+
-    node_valid = False
-    if os.path.exists(node_path):
-        try:
-            res = subprocess.run([node_path, "--version"], capture_output=True, text=True)
-            if res.returncode == 0:
-                version = res.stdout.strip()
-                # Simple check if version starts with v20, v21, v22...
-                if version.startswith("v2") or (version.startswith("v1") and int(version.split('.')[0][1:]) >= 20):
-                    node_valid = True
-                    print(f"✅ DEBUG: Found valid Node.js: {version}")
-                else:
-                    print(f"⚠️ DEBUG: Found old Node.js ({version}). Deleting...")
-                    node_valid = False
-                    os.remove(node_path)
-        except:
-            if os.path.exists(node_path): os.remove(node_path)
+    # Check Deno
+    try:
+        deno_v = subprocess.getoutput("deno --version").split('\n')[0]
+        print(f"✅ Deno:       {deno_v}")
+    except:
+        print("❌ Deno:       MISSING (yt-dlp will fail)")
 
-    if not node_valid:
-        print("⬇️ DEBUG: Downloading Node.js v20 (Required for yt-dlp)...")
-        # UPDATED URL: Node v20.12.2 (LTS)
-        node_url = "https://nodejs.org/dist/v20.12.2/node-v20.12.2-linux-x64.tar.xz"
-        try:
-            r = requests.get(node_url, stream=True, timeout=60)
-            if r.status_code == 200:
-                with open("temp_node.tar.xz", "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                
-                with tarfile.open("temp_node.tar.xz", "r:xz") as tar:
-                    for member in tar.getnames():
-                        if member.endswith("/bin/node"): 
-                            extracted = tar.extractfile(member)
-                            with open(node_path, "wb") as out:
-                                out.write(extracted.read())
-                            break
-                
-                os.chmod(node_path, 0o755)
-                
-                # Verify
-                v_check = subprocess.run([node_path, "--version"], capture_output=True, text=True)
-                if v_check.returncode == 0:
-                    print(f"✅ DEBUG: Node.js Installed & Verified: {v_check.stdout.strip()}")
-                else:
-                    print(f"❌ DEBUG: Node.js installed but FAILED to run: {v_check.stderr}")
-            else:
-                 print(f"❌ DEBUG: Node.js download failed: {r.status_code}")
-        except Exception as e:
-            print(f"❌ DEBUG: Node.js Setup Failed: {e}")
-        finally:
-            if os.path.exists("temp_node.tar.xz"): os.remove("temp_node.tar.xz")
-
-    # ---------------------------------------------------------
-    # 4. FINAL VERIFICATION
-    # ---------------------------------------------------------
-    print("\n🔍 SYSTEM CHECK (PATH & BINARIES):")
-    print(f"   PATH: {os.environ['PATH']}")
+    # Check Rustypipe
     try:
         rp_v = subprocess.getoutput("rustypipe-botguard --version")
-        print(f"   • rustypipe command: {rp_v}")
-    except: print("   • rustypipe command: FAILED")
-    
-    try:
-        node_v = subprocess.getoutput("node --version")
-        print(f"   • node command:      {node_v}")
-    except: print("   • node command:      FAILED")
-    print("-------------------------------------------\n")
+        print(f"✅ Rustypipe:  {rp_v}")
+    except:
+        print("❌ Rustypipe:  MISSING (PoToken will fail)")
+        
+    print("="*40 + "\n")
 
-# RUN SETUP NOW
+# RUN SETUP
 setup_environment()
 
 # ==========================================
@@ -167,15 +139,26 @@ current_playing = {}
 DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-def get_ydl_opts():
-    # Define paths again for the options
-    node_path = os.path.join(os.getcwd(), "bin", "node")
-    if not os.path.exists(node_path):
-        node_path = "node" # Fallback to system
+# Custom Logger to catch EVERYTHING
+class DebugLogger:
+    def debug(self, msg):
+        if "No supported JavaScript runtime" in msg:
+            print(f"🚨 CRITICAL ERROR: {msg}")
+        elif "PoToken" in msg or "rustypipe" in msg:
+            print(f"🟢 POTOKEN: {msg}")
+        elif "Sign in to confirm" in msg:
+            print(f"🛑 BLOCKED: {msg}")
+        # else: print(f"[YT-DLP] {msg}") # Uncomment for extreme spam
 
+    def info(self, msg): pass
+    def warning(self, msg): print(f"⚠️ WARN: {msg}")
+    def error(self, msg): print(f"❌ ERROR: {msg}")
+
+def get_ydl_opts():
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
+        'logger': DebugLogger(),
         'verbose': True,
         'quiet': False,
         'no_warnings': False,
@@ -184,10 +167,8 @@ def get_ydl_opts():
         'nocheckcertificate': True,
         'prefer_ffmpeg': True,
         
-        # 🔥 THE FIX: Explicitly enable Node.js runtime (v20+)
-        'js_runtimes': [('node', node_path)], 
-        
         # 🔧 CLIENT CONFIGURATION
+        # We rely on Deno (Default) + Rustypipe (IOS)
         'extractor_args': {
             'youtube': {
                 'player_client': ['ios', 'android', 'web'],
@@ -206,7 +187,6 @@ def get_ydl_opts():
 async def download_audio(url: str) -> dict:
     ydl_opts = get_ydl_opts()
     print(f"🔍 DEBUG: Downloading {url}")
-    print(f"🔍 DEBUG: JS Runtimes set to: {ydl_opts.get('js_runtimes')}")
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -223,7 +203,7 @@ async def download_audio(url: str) -> dict:
                 'url': url
             }
         except Exception as e:
-            print(f"❌ DOWNLOAD FAILED: {e}")
+            print(f"❌ FINAL DOWNLOAD FAILURE: {e}")
             raise e
 
 def is_youtube_url(url: str) -> bool:
