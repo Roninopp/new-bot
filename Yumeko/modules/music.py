@@ -1,4 +1,25 @@
-import asyncio
+async def download_audio(url: str) -> dict:
+    print(f"\n📥 [download_audio] === STARTING ===")
+    print(f"📥 [download_audio] URL: {url}")
+    
+    ydl_opts = get_ydl_opts()
+    print(f"📥 [download_audio] Got ydl_opts, creating YoutubeDL...")
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            print(f"📥 [download_audio] Calling extract_info()...")
+            info = await asyncio.to_thread(ydl.extract_info, url, download=True)
+            
+            if 'entries' in info: 
+                info = info['entries'][0]
+                print(f"📥 [download_audio] Got playlist entry")
+            
+            # Get the actual downloaded file path (will be .mp4 or .m4a)
+            file_path = ydl.prepare_filename(info)
+            
+            print(f"✅ [download_audio] SUCCESS! File: {file_path}")
+            print(f"✅ [download_audio] Title: {info.get('title', 'Unknown')}")
+            print(f"📥 [download_audio] === COMPLETE ===\import asyncio
 import os
 import re
 from typing import Optional
@@ -158,9 +179,7 @@ def get_ydl_opts():
         'geo_bypass': True,
         'nocheckcertificate': True,
         
-        # 🔥 DON'T force any client - let yt-dlp choose based on cookies
-        # This allows it to use whatever client works best with authentication
-        
+        # Convert to MP3 using ffmpeg
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
