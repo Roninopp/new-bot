@@ -12,89 +12,74 @@ from pyrogram import filters, Client
 from pyrogram.types import Message
 
 # ==========================================
-# 🔧 1. UNIVERSAL BINARY SETUP (RUSTYPIPE & NODEJS)
+# 🔧 CRITICAL: RUSTYPIPE SETUP (POTOKEN)
 # ==========================================
-def setup_environment():
+def setup_rustypipe():
     """
-    Sets up the entire environment:
-    1. rustypipe-botguard (For PoTokens)
-    2. node (For executing JS challenges)
+    Downloads Rustypipe binary.
     """
-    base_bin_dir = os.path.join(os.getcwd(), "bin")
-    if not os.path.exists(base_bin_dir):
-        os.makedirs(base_bin_dir, exist_ok=True)
+    binary_name = "rustypipe-botguard"
+    install_dir = os.path.join(os.getcwd(), "bin")
+    target_path = os.path.join(install_dir, binary_name)
+    
+    # URL that worked in your logs
+    URL_TO_TRY = "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz"
 
-    # Add bin to PATH immediately
-    if base_bin_dir not in os.environ["PATH"]:
-        os.environ["PATH"] = base_bin_dir + os.pathsep + os.environ["PATH"]
-        print(f"✅ DEBUG: Added {base_bin_dir} to PATH")
+    if not os.path.exists(install_dir):
+        os.makedirs(install_dir, exist_ok=True)
 
-    # --- A. SETUP RUSTYPIPE ---
-    rustypipe_path = os.path.join(base_bin_dir, "rustypipe-botguard")
-    if not os.path.exists(rustypipe_path):
-        print("⬇️ DEBUG: Downloading Rustypipe...")
-        # Use the specific Codeberg Archive URL that worked for you
-        url = "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz"
+    # Add to PATH
+    if install_dir not in os.environ["PATH"]:
+        os.environ["PATH"] = install_dir + os.pathsep + os.environ["PATH"]
+        print(f"✅ DEBUG: Added {install_dir} to PATH")
+
+    # Check if exists
+    if os.path.exists(target_path):
         try:
-            r = requests.get(url, stream=True)
-            with open("temp_rp.tar.xz", "wb") as f:
-                f.write(r.content)
+            res = subprocess.run([target_path, "--version"], capture_output=True, text=True)
+            if res.returncode == 0:
+                print(f"✅ DEBUG: Rustypipe is active: {res.stdout.strip()}")
+                return
+        except:
+            pass
+
+    print(f"⬇️ DEBUG: Downloading Rustypipe...")
+    try:
+        response = requests.get(URL_TO_TRY, stream=True, timeout=20)
+        if response.status_code == 200:
+            with open("rp.tar.xz", 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
             
-            with tarfile.open("temp_rp.tar.xz", "r:xz") as tar:
+            # Extract
+            with tarfile.open("rp.tar.xz", "r:xz") as tar:
                 for member in tar.getnames():
                     if "rustypipe-botguard" in member and "api" not in member:
                         extracted = tar.extractfile(member)
-                        with open(rustypipe_path, "wb") as out:
+                        with open(target_path, 'wb') as out:
                             out.write(extracted.read())
                         break
-            os.chmod(rustypipe_path, 0o755) # Make executable
-            print("✅ DEBUG: Rustypipe Installed.")
-        except Exception as e:
-            print(f"❌ DEBUG: Rustypipe Setup Failed: {e}")
-        finally:
-            if os.path.exists("temp_rp.tar.xz"): os.remove("temp_rp.tar.xz")
-
-    # --- B. SETUP NODE.JS (The Fix for 'No JS runtime') ---
-    node_path = os.path.join(base_bin_dir, "node")
-    if not os.path.exists(node_path):
-        print("⬇️ DEBUG: Downloading Node.js (Required for YouTube)...")
-        # Download standalone Node.js binary
-        node_url = "https://nodejs.org/dist/v16.20.0/node-v16.20.0-linux-x64.tar.xz"
-        try:
-            r = requests.get(node_url, stream=True)
-            with open("temp_node.tar.xz", "wb") as f:
-                f.write(r.content)
             
-            with tarfile.open("temp_node.tar.xz", "r:xz") as tar:
-                # Look for bin/node inside the archive
-                for member in tar.getnames():
-                    if member.endswith("/bin/node"):
-                        extracted = tar.extractfile(member)
-                        with open(node_path, "wb") as out:
-                            out.write(extracted.read())
-                        break
-            os.chmod(node_path, 0o755)
-            print("✅ DEBUG: Node.js Installed.")
-        except Exception as e:
-            print(f"❌ DEBUG: Node.js Setup Failed: {e}")
-        finally:
-            if os.path.exists("temp_node.tar.xz"): os.remove("temp_node.tar.xz")
+            # Executable
+            st = os.stat(target_path)
+            os.chmod(target_path, st.st_mode | stat.S_IEXEC)
+            print("✅ DEBUG: Rustypipe installed successfully.")
+        else:
+            print(f"❌ DEBUG: Failed to download Rustypipe: {response.status_code}")
+    except Exception as e:
+        print(f"❌ DEBUG: Error setting up Rustypipe: {e}")
+    finally:
+        if os.path.exists("rp.tar.xz"): os.remove("rp.tar.xz")
 
-    # --- VERIFY EVERYTHING ---
-    print("\n🔍 SYSTEM CHECK:")
-    try:
-        rp_ver = subprocess.getoutput("rustypipe-botguard --version")
-        print(f"   • Rustypipe: {rp_ver}")
-    except: print("   • Rustypipe: MISSING")
-    
-    try:
-        node_ver = subprocess.getoutput("node --version")
-        print(f"   • Node.js:   {node_ver}")
-    except: print("   • Node.js:   MISSING")
-    print("-------------------------------------------\n")
+# RUN SETUP
+setup_rustypipe()
 
-# RUN SETUP NOW
-setup_environment()
+# Check Node.js (Diagnostic)
+try:
+    node_v = subprocess.getoutput("node --version")
+    print(f"✅ DEBUG: Node.js version: {node_v}")
+except:
+    print("❌ CRITICAL WARNING: Node.js is MISSING. Please add heroku/nodejs buildpack.")
 
 # ==========================================
 # 📦 IMPORTS
@@ -126,28 +111,13 @@ current_playing = {}
 DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# Custom Logger to see EVERYTHING
-class MyLogger:
-    def debug(self, msg):
-        if "google.com/device" in msg:
-            print(f"\n🚨 LOGIN REQUIRED: {msg}\n")
-        elif "PoToken" in msg or "rustypipe" in msg:
-            print(f"🟢 POTOKEN: {msg}")
-        # Uncomment below to see literally everything (noisy)
-        # else: print(f"YT-DLP: {msg}")
-
-    def info(self, msg): pass
-    def warning(self, msg): print(f"⚠️ WARN: {msg}")
-    def error(self, msg): print(f"🛑 ERROR: {msg}")
-
 def get_ydl_opts():
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
-        'logger': MyLogger(), # Use our custom logger
         'verbose': True,
         'quiet': False,
-        'no_warnings': False,
+        'no_warnings': True, # Warnings are distracting now, we know the issue
         'extract_flat': False,
         'geo_bypass': True,
         'nocheckcertificate': True,
@@ -156,7 +126,6 @@ def get_ydl_opts():
         # KEY SETTINGS
         'extractor_args': {
             'youtube': {
-                # iOS is the only one that uses PoToken reliably
                 'player_client': ['ios', 'android', 'web'],
                 'skip': ['hls', 'dash'],
                 'player_skip': ['js', 'configs', 'web']
@@ -189,8 +158,7 @@ async def download_audio(url: str) -> dict:
                 'url': url
             }
         except Exception as e:
-            # If PoToken fails, this specific error will print
-            print(f"❌ CRITICAL DOWNLOAD FAIL: {e}")
+            print(f"❌ DOWNLOAD FAILED: {e}")
             raise e
 
 def is_youtube_url(url: str) -> bool:
