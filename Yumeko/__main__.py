@@ -17,6 +17,19 @@ from Yumeko.decorator.save import save
 from Yumeko.decorator.errors import error
 from pyrogram import Client
 
+# ========== MUSIC BOT IMPORT (NEW) ==========
+try:
+    from Yumeko.modules.music import userbot, pytgcalls
+    MUSIC_ENABLED = True
+    log.info("🎵 Music module loaded successfully!")
+except ImportError as e:
+    MUSIC_ENABLED = False
+    log.warning(f"⚠️ Music module not loaded: {e}")
+except Exception as e:
+    MUSIC_ENABLED = False
+    log.error(f"❌ Music module error: {e}")
+# ============================================
+
 
 MODULES = ["modules", "watchers", "admin", "decorator"]
 LOADED_MODULES = {}
@@ -340,6 +353,16 @@ if __name__ == "__main__":
     load_all_modules()
 
     try:
+        # ========== START MUSIC BOT FIRST (NEW) ==========
+        if MUSIC_ENABLED:
+            log.info("🎵 Starting music userbot...")
+            userbot.start()
+            log.info("🎵 Starting PyTgCalls...")
+            pytgcalls.start()
+            log.info("✅ Music bot ready!")
+        # ==================================================
+        
+        # Start main bot
         app.start()
         initialize_services()
         ensure_owner_is_hokage()
@@ -354,13 +377,19 @@ if __name__ == "__main__":
             await init_db()
             scheduler.start()
             
-            # Schedule the antiflood cleanup task to run every 5 minutes
-
-            
             log.info("Async components initialized.")
 
             bot_details = await app.get_me()
             log.info(f"Bot Configured: Name: {bot_details.first_name}, ID: {bot_details.id}, Username: @{bot_details.username}")
+            
+            # ========== LOG MUSIC BOT STATUS (NEW) ==========
+            if MUSIC_ENABLED:
+                try:
+                    userbot_details = await userbot.get_me()
+                    log.info(f"🎵 Music Userbot: {userbot_details.first_name} (@{userbot_details.username})")
+                except Exception as e:
+                    log.error(f"❌ Failed to get userbot details: {e}")
+            # ================================================
 
         loop.run_until_complete(initialize_async_components())
         log.info("Bot started. Press Ctrl+C to stop.")
@@ -368,6 +397,16 @@ if __name__ == "__main__":
         
         cleanup()
     
+        # ========== STOP MUSIC BOT (NEW) ==========
+        if MUSIC_ENABLED:
+            try:
+                pytgcalls.stop()
+                userbot.stop()
+                log.info("🎵 Music bot stopped")
+            except Exception as e:
+                log.error(f"Error stopping music bot: {e}")
+        # ==========================================
+        
         app.stop()
 
     except Exception as e:
