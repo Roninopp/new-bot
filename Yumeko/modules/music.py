@@ -42,6 +42,14 @@ def get_ydl_opts():
         'geo_bypass': True,
         'nocheckcertificate': True,
         'prefer_ffmpeg': True,
+        
+        # ENABLE PO_TOKEN AUTO-GENERATION via RustyPipe
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['ios', 'web'],
+            }
+        },
+        
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
