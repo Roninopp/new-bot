@@ -26,35 +26,45 @@ def install_rustypipe():
     binary_name = "rustypipe-botguard"
     print(f"🔍 DEBUG: Checking for {binary_name} binary...")
 
-    # 1. Check if it's already in the system PATH
-    if shutil.which(binary_name):
-        print(f"✅ DEBUG: {binary_name} found in PATH!")
-        return
-
-    # 2. If not found, define an install location (User's local bin)
-    install_dir = os.path.join(os.getcwd(), "bin") # Install in current bot folder/bin to be safe
+    # Define install location (User's local bin)
+    install_dir = os.path.join(os.getcwd(), "bin")
     target_path = os.path.join(install_dir, binary_name)
     
-    if not os.path.exists(install_dir):
-        os.makedirs(install_dir, exist_ok=True)
+    # Check if exists
+    if os.path.exists(target_path):
+        print(f"✅ DEBUG: {binary_name} found at {target_path}")
+    else:
+        # Download the binary
+        print(f"⚠️ DEBUG: Binary NOT found. Downloading to {target_path}...")
+        
+        if not os.path.exists(install_dir):
+            os.makedirs(install_dir, exist_ok=True)
 
-    # 3. Download the binary
-    print(f"⚠️ DEBUG: Binary NOT found. Downloading to {target_path}...")
-    url = "https://github.com/ThetaDev/rustypipe-botguard/releases/latest/download/rustypipe-botguard-x86_64-unknown-linux-musl"
+        # --- THE FIX IS HERE (Changed 'musl' to 'gnu') ---
+        url = "https://github.com/ThetaDev/rustypipe-botguard/releases/latest/download/rustypipe-botguard-x86_64-unknown-linux-gnu"
+        
+        try:
+            subprocess.run(["curl", "-L", "-o", target_path, url], check=True)
+            
+            # Make it executable
+            st = os.stat(target_path)
+            os.chmod(target_path, st.st_mode | stat.S_IEXEC)
+            
+            print(f"✅ DEBUG: Successfully installed: {target_path}")
+        except Exception as e:
+            print(f"❌ DEBUG: Failed to install RustyPipe: {e}")
+            return
+
+    # Add to PATH so yt-dlp can find it
+    os.environ["PATH"] += os.pathsep + install_dir
     
+    # --- VERIFICATION STEP ---
+    # We try to run it to prove it works. If this fails, the token will fail.
     try:
-        subprocess.run(["curl", "-L", "-o", target_path, url], check=True)
-        
-        # 4. Make it executable (chmod +x)
-        st = os.stat(target_path)
-        os.chmod(target_path, st.st_mode | stat.S_IEXEC)
-        
-        # 5. Add to PATH variable for this session so yt-dlp can find it
-        os.environ["PATH"] += os.pathsep + install_dir
-        
-        print(f"✅ DEBUG: Successfully installed and added to PATH: {target_path}")
+        result = subprocess.run([target_path, "--version"], capture_output=True, text=True)
+        print(f"✅ DEBUG: Binary Verification: {result.stdout.strip()}")
     except Exception as e:
-        print(f"❌ DEBUG: Failed to install RustyPipe: {e}")
+        print(f"❌ DEBUG: Binary exists but failed to run (Architecture mismatch?): {e}")
 
 # RUN INSTALLER IMMEDIATELY
 install_rustypipe()
