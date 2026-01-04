@@ -1,117 +1,13 @@
 import asyncio
 import os
 import re
-import stat
 import shutil
 import subprocess
-import logging
 import requests
-import tarfile
 import zipfile
-import sys
 from typing import Optional
 from pyrogram import filters, Client
 from pyrogram.types import Message
-
-# ==========================================
-# 🛠️ SUPER DEBUG & INSTALLER (Deno + Rustypipe)
-# ==========================================
-def setup_environment():
-    """
-    Installs Deno (Default JS Engine for yt-dlp) and Rustypipe (PoToken).
-    """
-    base_bin_dir = os.path.join(os.getcwd(), "bin")
-    if not os.path.exists(base_bin_dir):
-        os.makedirs(base_bin_dir, exist_ok=True)
-
-    # 1. ADD TO PATH
-    if base_bin_dir not in os.environ["PATH"]:
-        os.environ["PATH"] = base_bin_dir + os.pathsep + os.environ["PATH"]
-
-    print(f"\n[DEBUG] 📂 PATH Configured: {base_bin_dir}")
-
-    # ---------------------------------------------------------
-    # 2. INSTALL DENO (The "Brain" - Default in new yt-dlp)
-    # ---------------------------------------------------------
-    deno_path = os.path.join(base_bin_dir, "deno")
-    if not os.path.exists(deno_path):
-        print("[DEBUG] ⬇️ Downloading Deno (JS Runtime)...")
-        # Downloading Deno v1.40.0 (Stable Linux x64)
-        deno_url = "https://github.com/denoland/deno/releases/download/v1.40.0/deno-x86_64-unknown-linux-gnu.zip"
-        try:
-            r = requests.get(deno_url, stream=True, timeout=30)
-            if r.status_code == 200:
-                with open("deno.zip", "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                
-                with zipfile.ZipFile("deno.zip", 'r') as zip_ref:
-                    zip_ref.extractall(base_bin_dir)
-                
-                os.chmod(deno_path, 0o755)
-                print("[DEBUG] ✅ Deno Installed.")
-            else:
-                print(f"[DEBUG] ❌ Deno Download Failed: {r.status_code}")
-        except Exception as e:
-            print(f"[DEBUG] ❌ Deno Setup Error: {e}")
-        finally:
-            if os.path.exists("deno.zip"): os.remove("deno.zip")
-
-    # ---------------------------------------------------------
-    # 3. INSTALL RUSTYPIPE (The "License" - PoToken)
-    # ---------------------------------------------------------
-    rp_path = os.path.join(base_bin_dir, "rustypipe-botguard")
-    if not os.path.exists(rp_path):
-        print("[DEBUG] ⬇️ Downloading Rustypipe...")
-        rp_url = "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz"
-        try:
-            r = requests.get(rp_url, stream=True, timeout=30)
-            with open("rp.tar.xz", "wb") as f:
-                f.write(r.content)
-            
-            with tarfile.open("rp.tar.xz", "r:xz") as tar:
-                for member in tar.getnames():
-                    if "rustypipe-botguard" in member and "api" not in member:
-                        extracted = tar.extractfile(member)
-                        with open(rp_path, "wb") as out:
-                            out.write(extracted.read())
-                        break
-            os.chmod(rp_path, 0o755)
-            print("[DEBUG] ✅ Rustypipe Installed.")
-        except Exception as e:
-            print(f"[DEBUG] ❌ Rustypipe Setup Error: {e}")
-        finally:
-            if os.path.exists("rp.tar.xz"): os.remove("rp.tar.xz")
-
-    # ---------------------------------------------------------
-    # 4. FINAL DIAGNOSTIC REPORT
-    # ---------------------------------------------------------
-    print("\n" + "="*40)
-    print("       🧬 STARTUP DIAGNOSTICS       ")
-    print("="*40)
-    
-    # Check Deno
-    try:
-        deno_v = subprocess.getoutput("deno --version").split('\n')[0]
-        print(f"✅ Deno:       {deno_v}")
-    except:
-        print("❌ Deno:       MISSING (yt-dlp will fail)")
-
-    # Check Rustypipe
-    try:
-        rp_v = subprocess.getoutput("rustypipe-botguard --version")
-        print(f"✅ Rustypipe:  {rp_v}")
-    except:
-        print("❌ Rustypipe:  MISSING (PoToken will fail)")
-        
-    print("="*40 + "\n")
-
-# RUN SETUP
-setup_environment()
-
-# ==========================================
-# 📦 IMPORTS
-# ==========================================
 import yt_dlp
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality
@@ -121,7 +17,58 @@ from Yumeko.decorator.save import save
 from Yumeko.decorator.errors import error
 
 # ==========================================
-# 🎵 MUSIC CLIENT
+# 🔧 CRITICAL: INSTALL DENO (The "Brain")
+# ==========================================
+def setup_deno():
+    """
+    Installs Deno. This is REQUIRED to fix the 
+    'No supported JavaScript runtime' error.
+    """
+    base_bin_dir = os.path.join(os.getcwd(), "bin")
+    deno_path = os.path.join(base_bin_dir, "deno")
+    
+    if not os.path.exists(base_bin_dir):
+        os.makedirs(base_bin_dir, exist_ok=True)
+
+    # Add to PATH immediately
+    if base_bin_dir not in os.environ["PATH"]:
+        os.environ["PATH"] = base_bin_dir + os.pathsep + os.environ["PATH"]
+        print(f"✅ DEBUG: Added {base_bin_dir} to PATH")
+
+    # Check if Deno works
+    if os.path.exists(deno_path):
+        try:
+            ver = subprocess.getoutput(f"{deno_path} --version")
+            if "deno" in ver:
+                print(f"✅ DEBUG: Deno is ready: {ver.split()[1]}")
+                return
+        except: pass
+
+    print("⬇️ DEBUG: Downloading Deno (Essential for YouTube)...")
+    try:
+        # Download Deno v1.40.0 (Stable Linux)
+        url = "https://github.com/denoland/deno/releases/download/v1.40.0/deno-x86_64-unknown-linux-gnu.zip"
+        r = requests.get(url, stream=True, timeout=30)
+        
+        with open("deno.zip", "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+        
+        with zipfile.ZipFile("deno.zip", 'r') as z:
+            z.extractall(base_bin_dir)
+            
+        os.chmod(deno_path, 0o755)
+        print("✅ DEBUG: Deno Installed Successfully.")
+    except Exception as e:
+        print(f"❌ DEBUG: Deno Install Failed: {e}")
+    finally:
+        if os.path.exists("deno.zip"): os.remove("deno.zip")
+
+# RUN SETUP
+setup_deno()
+
+# ==========================================
+# 🎵 MUSIC CLIENT SETUP
 # ==========================================
 
 userbot = Client(
@@ -135,47 +82,40 @@ pytgcalls = PyTgCalls(userbot)
 
 music_queue = {}
 current_playing = {}
-
 DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# Custom Logger to catch EVERYTHING
-class DebugLogger:
-    def debug(self, msg):
-        if "No supported JavaScript runtime" in msg:
-            print(f"🚨 CRITICAL ERROR: {msg}")
-        elif "PoToken" in msg or "rustypipe" in msg:
-            print(f"🟢 POTOKEN: {msg}")
-        elif "Sign in to confirm" in msg:
-            print(f"🛑 BLOCKED: {msg}")
-        # else: print(f"[YT-DLP] {msg}") # Uncomment for extreme spam
-
-    def info(self, msg): pass
-    def warning(self, msg): print(f"⚠️ WARN: {msg}")
-    def error(self, msg): print(f"❌ ERROR: {msg}")
-
 def get_ydl_opts():
+    # Check if cookies file exists
+    cookie_path = "cookies.txt"
+    if not os.path.exists(cookie_path):
+        print("⚠️ WARNING: cookies.txt NOT FOUND! Upload it to fix 'Sign in' errors.")
+    else:
+        print(f"✅ DEBUG: Using cookies.txt for authentication.")
+
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
-        'logger': DebugLogger(),
         'verbose': True,
         'quiet': False,
         'no_warnings': False,
-        'extract_flat': False,
         'geo_bypass': True,
         'nocheckcertificate': True,
-        'prefer_ffmpeg': True,
         
-        # 🔧 CLIENT CONFIGURATION
-        # We rely on Deno (Default) + Rustypipe (IOS)
+        # 🔥 CRITICAL: USE COOKIES FILE
+        'cookiefile': cookie_path,
+        
+        # 🔥 CRITICAL: USE DENO RUNTIME
+        # This fixes the 'No supported JavaScript runtime' error
+        'js_runtimes': [('deno', os.path.join(os.getcwd(), 'bin', 'deno'))],
+        
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'android', 'web'],
                 'skip': ['hls', 'dash'],
-                'player_skip': ['web'] 
+                'player_skip': ['web'] # Don't skip JS, we have Deno now!
             }
         },
+        
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -203,14 +143,20 @@ async def download_audio(url: str) -> dict:
                 'url': url
             }
         except Exception as e:
-            print(f"❌ FINAL DOWNLOAD FAILURE: {e}")
+            print(f"❌ DOWNLOAD FAILED: {e}")
             raise e
+
+# --- QUEUE & HELPERS ---
 
 def is_youtube_url(url: str) -> bool:
     return bool(re.match(r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/', url))
 
 async def search_youtube(query: str) -> Optional[str]:
-    with yt_dlp.YoutubeDL({'format': 'bestaudio', 'noplaylist': True, 'quiet': True, 'default_search': 'ytsearch'}) as ydl:
+    # Use cookies for search too
+    cookie_path = "cookies.txt" if os.path.exists("cookies.txt") else None
+    opts = {'format': 'bestaudio', 'noplaylist': True, 'quiet': True, 'default_search': 'ytsearch', 'cookiefile': cookie_path}
+    
+    with yt_dlp.YoutubeDL(opts) as ydl:
         try:
             info = await asyncio.to_thread(ydl.extract_info, f"ytsearch:{query}", download=False)
             if info and 'entries' in info and len(info['entries']) > 0:
