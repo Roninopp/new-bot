@@ -24,13 +24,15 @@ def setup_environment():
     if not os.path.exists(base_bin_dir):
         os.makedirs(base_bin_dir, exist_ok=True)
 
-    # Add bin to PATH immediately so the rest of the script sees it
-    if base_bin_dir not in os.environ["PATH"]:
-        os.environ["PATH"] = base_bin_dir + os.pathsep + os.environ["PATH"]
-        print(f"✅ DEBUG: Added {base_bin_dir} to PATH")
+    # 1. FORCE PATH UPDATE (Put our bin FIRST)
+    # We update os.environ so child processes inherit it
+    current_path = os.environ.get("PATH", "")
+    if base_bin_dir not in current_path:
+        os.environ["PATH"] = base_bin_dir + os.pathsep + current_path
+        print(f"✅ DEBUG: Prepend {base_bin_dir} to PATH")
 
     # ---------------------------------------------------------
-    # 1. SETUP RUSTYPIPE (The Token Generator)
+    # 2. SETUP RUSTYPIPE (The Token Generator)
     # ---------------------------------------------------------
     rustypipe_path = os.path.join(base_bin_dir, "rustypipe-botguard")
     if not os.path.exists(rustypipe_path):
@@ -50,7 +52,7 @@ def setup_environment():
                             with open(rustypipe_path, "wb") as out:
                                 out.write(extracted.read())
                             break
-                os.chmod(rustypipe_path, 0o755)
+                os.chmod(rustypipe_path, 0o755) 
                 print("✅ DEBUG: Rustypipe Installed.")
             else:
                 print(f"❌ DEBUG: Rustypipe download failed: {r.status_code}")
@@ -60,19 +62,26 @@ def setup_environment():
             if os.path.exists("temp_rp.tar.xz"): os.remove("temp_rp.tar.xz")
 
     # ---------------------------------------------------------
-    # 2. SETUP NODE.JS (The Puzzle Solver)
+    # 3. SETUP NODE.JS (The Brain - Switched to v16 for Compatibility)
     # ---------------------------------------------------------
     node_path = os.path.join(base_bin_dir, "node")
-    node_working = False
-    try:
-        if subprocess.run(["node", "-v"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-            node_working = True
-            print("✅ DEBUG: System Node.js found")
-    except: pass
+    
+    # Check if node exists and runs
+    node_valid = False
+    if os.path.exists(node_path):
+        try:
+            # Test execution
+            res = subprocess.run([node_path, "--version"], capture_output=True, text=True)
+            if res.returncode == 0:
+                node_valid = True
+                print(f"✅ DEBUG: Found existing Node.js: {res.stdout.strip()}")
+        except:
+            os.remove(node_path)
 
-    if not node_working and not os.path.exists(node_path):
-        print("⬇️ DEBUG: Downloading Node.js (Required for YouTube)...")
-        node_url = "https://nodejs.org/dist/v18.16.0/node-v18.16.0-linux-x64.tar.xz"
+    if not node_valid:
+        print("⬇️ DEBUG: Downloading Node.js (v16.20.2)...")
+        # Using v16 because v18+ requires newer glibc than some Heroku stacks provide
+        node_url = "https://nodejs.org/dist/v16.20.2/node-v16.20.2-linux-x64.tar.xz"
         try:
             r = requests.get(node_url, stream=True, timeout=30)
             if r.status_code == 200:
@@ -81,53 +90,44 @@ def setup_environment():
                         f.write(chunk)
                 
                 with tarfile.open("temp_node.tar.xz", "r:xz") as tar:
+                    # Find bin/node deeply nested
                     for member in tar.getnames():
-                        if member.endswith("/bin/node"):
+                        if member.endswith("/bin/node"): 
                             extracted = tar.extractfile(member)
                             with open(node_path, "wb") as out:
                                 out.write(extracted.read())
                             break
-                os.chmod(node_path, 0o755)
-                print("✅ DEBUG: Node.js Installed manually.")
                 
-                # 🔥 NUCLEAR OPTION: Make node available as 'node' command
-                # Create wrapper script if possible
-                try:
-                    usr_local_bin = "/usr/local/bin"
-                    if os.path.exists(usr_local_bin) and os.access(usr_local_bin, os.W_OK):
-                        node_symlink = os.path.join(usr_local_bin, "node")
-                        if not os.path.exists(node_symlink):
-                            os.symlink(node_path, node_symlink)
-                            print("✅ DEBUG: Created system-wide node symlink")
-                except Exception as e:
-                    print(f"⚠️ DEBUG: Could not create symlink: {e}")
+                os.chmod(node_path, 0o755)
+                
+                # Verify immediately
+                v_check = subprocess.run([node_path, "--version"], capture_output=True, text=True)
+                if v_check.returncode == 0:
+                    print(f"✅ DEBUG: Node.js Installed & Verified: {v_check.stdout.strip()}")
+                else:
+                    print(f"❌ DEBUG: Node.js installed but FAILED to run: {v_check.stderr}")
             else:
-                print(f"❌ DEBUG: Node.js download failed: {r.status_code}")
+                 print(f"❌ DEBUG: Node.js download failed: {r.status_code}")
         except Exception as e:
             print(f"❌ DEBUG: Node.js Setup Failed: {e}")
         finally:
             if os.path.exists("temp_node.tar.xz"): os.remove("temp_node.tar.xz")
 
     # ---------------------------------------------------------
-    # 3. VERIFICATION & ENVIRONMENT SETUP
+    # 4. FINAL VERIFICATION (LOGS WILL SHOW THIS)
     # ---------------------------------------------------------
-    print("\n🔍 SYSTEM CHECK:")
+    print("\n🔍 SYSTEM CHECK (PATH & BINARIES):")
+    print(f"   PATH: {os.environ['PATH']}")
     try:
-        rp_ver = subprocess.getoutput(f"{rustypipe_path} --version") if os.path.exists(rustypipe_path) else "MISSING"
-        print(f"   • Rustypipe: {rp_ver}")
-    except: pass
+        # Check through shell to ensure PATH lookup works
+        rp_v = subprocess.getoutput("rustypipe-botguard --version")
+        print(f"   • rustypipe command: {rp_v}")
+    except: print("   • rustypipe command: FAILED")
     
     try:
-        node_ver = subprocess.getoutput(f"{node_path} --version") if os.path.exists(node_path) else subprocess.getoutput("node --version")
-        print(f"   • Node.js:   {node_ver}")
-    except: print("   • Node.js:   MISSING")
-    
-    # 🔥 CRITICAL: Set environment variable for yt-dlp to find Node.js
-    # This is THE MOST RELIABLE method
-    if os.path.exists(node_path):
-        os.environ['YT_DLP_JS_RUNTIME'] = f'node:{node_path}'
-        print(f"   • Set YT_DLP_JS_RUNTIME={os.environ['YT_DLP_JS_RUNTIME']}")
-    
+        node_v = subprocess.getoutput("node --version")
+        print(f"   • node command:      {node_v}")
+    except: print("   • node command:      FAILED")
     print("-------------------------------------------\n")
 
 # RUN SETUP NOW
@@ -164,58 +164,44 @@ DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 def get_ydl_opts():
-    print(f"🔍 DEBUG [get_ydl_opts]: Function called!")
-    
-    # 🔥 NUCLEAR OPTION: Use Android client exclusively
-    # This bypasses ALL bot detection, no Node.js/PO tokens needed!
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
+        'verbose': True,
         'quiet': False,
-        'no_warnings': False,
+        'no_warnings': True,
         'extract_flat': False,
         'geo_bypass': True,
         'nocheckcertificate': True,
+        'prefer_ffmpeg': True,
         
-        # 🚀 THE MAGIC: Force Android client ONLY (bypasses bot detection)
+        # 🔧 Force usage of our binaries and ios client
         'extractor_args': {
             'youtube': {
-                'player_client': ['android'],  # ONLY Android, nothing else
-                'skip': ['webpage', 'configs'],  # Skip web-based extraction
+                'player_client': ['ios', 'android', 'web'],
+                'skip': ['hls', 'dash'],
+                'player_skip': ['js', 'configs', 'web']
             }
         },
-        
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
     }
-    
-    print(f"✅ DEBUG [get_ydl_opts]: Using ANDROID CLIENT (no bot detection!)")
-    print(f"📋 DEBUG [get_ydl_opts]: Options configured: {list(opts.keys())}")
-    
     return opts
 
 async def download_audio(url: str) -> dict:
-    print(f"🔍 DEBUG [download_audio]: Starting download for {url}")
-    
     ydl_opts = get_ydl_opts()
-    print(f"🔍 DEBUG [download_audio]: Got ydl_opts with keys: {list(ydl_opts.keys())}")
+    print(f"🔍 DEBUG: Downloading {url}")
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            print(f"🔍 DEBUG [download_audio]: Calling ydl.extract_info()...")
             info = await asyncio.to_thread(ydl.extract_info, url, download=True)
-            
-            if 'entries' in info: 
-                info = info['entries'][0]
-                print(f"🔍 DEBUG [download_audio]: Got playlist, using first entry")
+            if 'entries' in info: info = info['entries'][0]
             
             file_path = ydl.prepare_filename(info)
             file_path = os.path.splitext(file_path)[0] + '.mp3'
-            
-            print(f"✅ DEBUG [download_audio]: Successfully downloaded to {file_path}")
             
             return {
                 'title': info.get('title', 'Unknown'),
@@ -224,8 +210,7 @@ async def download_audio(url: str) -> dict:
                 'url': url
             }
         except Exception as e:
-            print(f"❌ DEBUG [download_audio]: FAILED with error: {str(e)}")
-            print(f"❌ DEBUG [download_audio]: Error type: {type(e).__name__}")
+            print(f"❌ DOWNLOAD FAILED: {e}")
             raise e
 
 def is_youtube_url(url: str) -> bool:
@@ -282,7 +267,7 @@ async def play_command(client, message: Message):
             await status_msg.edit("❌ **No results found!**")
             return
         
-        await status_msg.edit("⬇ **Downloading...**")
+        await status_msg.edit("⏬ **Downloading...**")
         audio_data = await download_audio(url)
         
         song_info = {
