@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import logging
 import requests
+import tarfile
 from typing import Optional
 from pyrogram import filters, Client
 from pyrogram.types import Message
@@ -21,17 +22,14 @@ def setup_rustypipe():
     install_dir = os.path.join(os.getcwd(), "bin")
     target_path = os.path.join(install_dir, binary_name)
     
-    # List of potential URLs (Main Repo, Botguard Repo, different versions)
-    # We prioritize the MUSL version for Heroku
+    # List of potential URLs with CORRECT filenames and formats
     URLS_TO_TRY = [
-        # Main Rustypipe Repo (Most likely location for newer builds)
-        "https://codeberg.org/ThetaDev/rustypipe/releases/download/v0.1.2/rustypipe-botguard-x86_64-unknown-linux-musl",
-        "https://codeberg.org/ThetaDev/rustypipe/releases/download/v0.1.0/rustypipe-botguard-x86_64-unknown-linux-musl",
-        # Original Botguard Repo (Try older versions if new ones fail)
-        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-x86_64-unknown-linux-musl",
-        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.0/rustypipe-botguard-x86_64-unknown-linux-musl",
-        # Fallback to GNU if MUSL fails completely
-        "https://codeberg.org/ThetaDev/rustypipe/releases/download/v0.1.2/rustypipe-botguard-x86_64-unknown-linux-gnu",
+        # Latest version v0.1.2 (GNU Linux - tar.xz format)
+        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz",
+        # Previous version v0.1.1 (fallback)
+        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.1/rustypipe-botguard-v0.1.1-x86_64-unknown-linux-gnu.tar.xz",
+        # Initial release v0.1.0 (fallback)
+        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.0/rustypipe-botguard-v0.1.0-x86_64-unknown-linux-gnu.tar.xz",
     ]
 
     if not os.path.exists(install_dir):
@@ -62,22 +60,47 @@ def setup_rustypipe():
     for url in URLS_TO_TRY:
         print(f"⬇️ DEBUG: Trying {url}...")
         try:
-            response = requests.get(url, stream=True, timeout=15, headers=headers)
+            response = requests.get(url, stream=True, timeout=30, headers=headers)
             if response.status_code == 200:
-                with open(target_path, 'wb') as f:
+                # Download to temporary archive file
+                temp_archive = os.path.join(install_dir, "temp_rustypipe.tar.xz")
+                print(f"📥 DEBUG: Downloading archive...")
+                with open(temp_archive, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
                 
-                # Make executable
-                st = os.stat(target_path)
-                os.chmod(target_path, st.st_mode | stat.S_IEXEC)
+                print(f"📦 DEBUG: Extracting archive...")
+                # Extract the tar.xz file
+                try:
+                    with tarfile.open(temp_archive, 'r:xz') as tar:
+                        tar.extractall(install_dir)
+                    
+                    # Remove the archive
+                    os.remove(temp_archive)
+                    print(f"🗑️ DEBUG: Removed temporary archive")
+                except Exception as extract_error:
+                    print(f"❌ DEBUG: Extraction error: {extract_error}")
+                    if os.path.exists(temp_archive):
+                        os.remove(temp_archive)
+                    continue
                 
-                # Test it
-                res = subprocess.run([target_path, "--version"], capture_output=True, text=True)
-                if res.returncode == 0:
-                    print(f"✅ DEBUG: SUCCESS! Downloaded from {url}")
-                    success = True
-                    break
+                # Make executable
+                if os.path.exists(target_path):
+                    st = os.stat(target_path)
+                    os.chmod(target_path, st.st_mode | stat.S_IEXEC)
+                    print(f"🔐 DEBUG: Made binary executable")
+                    
+                    # Test it
+                    res = subprocess.run([target_path, "--version"], capture_output=True, text=True)
+                    if res.returncode == 0:
+                        print(f"✅ DEBUG: SUCCESS! Downloaded from {url}")
+                        print(f"✅ DEBUG: Version: {res.stdout.strip()}")
+                        success = True
+                        break
+                    else:
+                        print(f"⚠️ DEBUG: Binary extracted but failed version check")
+                else:
+                    print(f"⚠️ DEBUG: Binary not found after extraction")
             else:
                 print(f"⚠️ DEBUG: Failed with {response.status_code}")
         except Exception as e:
@@ -208,7 +231,7 @@ async def play_command(client, message: Message):
             await status_msg.edit("❌ **No results found!**")
             return
         
-        await status_msg.edit("⏬ **Downloading...**")
+        await status_msg.edit("⬇ **Downloading...**")
         audio_data = await download_audio(url)
         
         song_info = {
