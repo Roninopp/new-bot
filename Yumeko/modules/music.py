@@ -4,7 +4,7 @@ import re
 import shutil
 import subprocess
 import requests
-import zipfile
+import tarfile
 from typing import Optional
 from pyrogram import filters, Client
 from pyrogram.types import Message
@@ -17,55 +17,68 @@ from Yumeko.decorator.save import save
 from Yumeko.decorator.errors import error
 
 # ==========================================
-# 🔧 CRITICAL: INSTALL DENO (The "Brain")
+# 🔧 CRITICAL: INSTALL NODE.JS v20 (The "Brain")
 # ==========================================
-def setup_deno():
+def setup_node():
     """
-    Installs Deno. This is REQUIRED to fix the 
-    'No supported JavaScript runtime' error.
+    Downloads a standalone Node.js v20 binary.
+    This is required to solve YouTube's 'Signature' challenges.
     """
     base_bin_dir = os.path.join(os.getcwd(), "bin")
-    deno_path = os.path.join(base_bin_dir, "deno")
+    node_dir = os.path.join(base_bin_dir, "node_folder")
+    node_bin = os.path.join(base_bin_dir, "node")
     
     if not os.path.exists(base_bin_dir):
         os.makedirs(base_bin_dir, exist_ok=True)
 
-    # Add to PATH immediately
+    # 1. ADD TO PATH (Crucial for yt-dlp to find it)
     if base_bin_dir not in os.environ["PATH"]:
         os.environ["PATH"] = base_bin_dir + os.pathsep + os.environ["PATH"]
         print(f"✅ DEBUG: Added {base_bin_dir} to PATH")
 
-    # Check if Deno works
-    if os.path.exists(deno_path):
-        try:
-            ver = subprocess.getoutput(f"{deno_path} --version")
-            if "deno" in ver:
-                print(f"✅ DEBUG: Deno is ready: {ver.split()[1]}")
-                return
-        except: pass
-
-    print("⬇️ DEBUG: Downloading Deno (Essential for YouTube)...")
+    # 2. CHECK IF NODE EXISTS
     try:
-        # Download Deno v1.40.0 (Stable Linux)
-        url = "https://github.com/denoland/deno/releases/download/v1.40.0/deno-x86_64-unknown-linux-gnu.zip"
-        r = requests.get(url, stream=True, timeout=30)
+        if shutil.which("node"):
+            ver = subprocess.getoutput("node --version")
+            if ver.startswith("v2") or (ver.startswith("v1") and int(ver.split('.')[0][1:]) >= 18):
+                print(f"✅ DEBUG: Valid Node.js found: {ver}")
+                return
+    except: pass
+
+    # 3. DOWNLOAD NODE v20 (Static Linux Binary)
+    print("⬇️ DEBUG: Downloading Node.js v20 (Signature Solver)...")
+    try:
+        url = "https://nodejs.org/dist/v20.10.0/node-v20.10.0-linux-x64.tar.xz"
+        r = requests.get(url, stream=True, timeout=60)
         
-        with open("deno.zip", "wb") as f:
+        with open("node.tar.xz", "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 f.write(chunk)
         
-        with zipfile.ZipFile("deno.zip", 'r') as z:
-            z.extractall(base_bin_dir)
+        # Extract
+        with tarfile.open("node.tar.xz", "r:xz") as tar:
+            tar.extractall(base_bin_dir)
             
-        os.chmod(deno_path, 0o755)
-        print("✅ DEBUG: Deno Installed Successfully.")
+        # Move binary to /bin/node
+        # The tar extracts to a folder like 'node-v20.../bin/node'
+        extracted_folder = [d for d in os.listdir(base_bin_dir) if d.startswith("node-v")][0]
+        full_extracted_path = os.path.join(base_bin_dir, extracted_folder, "bin", "node")
+        
+        if os.path.exists(node_bin): os.remove(node_bin)
+        shutil.move(full_extracted_path, node_bin)
+        
+        os.chmod(node_bin, 0o755)
+        print(f"✅ DEBUG: Node.js Installed at {node_bin}")
+        
+        # Clean up
+        os.remove("node.tar.xz")
+        shutil.rmtree(os.path.join(base_bin_dir, extracted_folder))
+        
     except Exception as e:
-        print(f"❌ DEBUG: Deno Install Failed: {e}")
-    finally:
-        if os.path.exists("deno.zip"): os.remove("deno.zip")
+        print(f"❌ DEBUG: Node Install Failed: {e}")
 
 # RUN SETUP
-setup_deno()
+setup_node()
 
 # ==========================================
 # 🎵 MUSIC CLIENT SETUP
@@ -89,9 +102,9 @@ def get_ydl_opts():
     # Check if cookies file exists
     cookie_path = "cookies.txt"
     if not os.path.exists(cookie_path):
-        print("⚠️ WARNING: cookies.txt NOT FOUND! Upload it to fix 'Sign in' errors.")
+        print("⚠️ WARNING: cookies.txt NOT FOUND!")
     else:
-        print(f"✅ DEBUG: Using cookies.txt for authentication.")
+        print(f"✅ DEBUG: Using cookies.txt")
 
     opts = {
         'format': 'bestaudio/best',
@@ -102,19 +115,12 @@ def get_ydl_opts():
         'geo_bypass': True,
         'nocheckcertificate': True,
         
-        # 🔥 CRITICAL: USE COOKIES FILE
+        # 🔥 USE COOKIES (Solves "Sign in")
         'cookiefile': cookie_path,
         
-        # 🔥 CRITICAL: USE DENO RUNTIME
-        # This fixes the 'No supported JavaScript runtime' error
-        'js_runtimes': [('deno', os.path.join(os.getcwd(), 'bin', 'deno'))],
-        
-        'extractor_args': {
-            'youtube': {
-                'skip': ['hls', 'dash'],
-                'player_skip': ['web'] # Don't skip JS, we have Deno now!
-            }
-        },
+        # 🔥 USE NODE.JS (Solves "Signature Failed")
+        # We force yt-dlp to use the node binary we just downloaded
+        'js_runtimes': [('node', os.path.join(os.getcwd(), 'bin', 'node'))],
         
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
@@ -152,7 +158,6 @@ def is_youtube_url(url: str) -> bool:
     return bool(re.match(r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/', url))
 
 async def search_youtube(query: str) -> Optional[str]:
-    # Use cookies for search too
     cookie_path = "cookies.txt" if os.path.exists("cookies.txt") else None
     opts = {'format': 'bestaudio', 'noplaylist': True, 'quiet': True, 'default_search': 'ytsearch', 'cookiefile': cookie_path}
     
