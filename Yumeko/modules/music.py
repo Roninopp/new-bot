@@ -1,10 +1,65 @@
 import asyncio
 import os
 import re
+import shutil
 from typing import Optional
 from datetime import datetime
 from pyrogram import filters, Client
 from pyrogram.types import Message
+
+# ==========================================
+# 🔍 CRITICAL: FFMPEG DETECTION SYSTEM
+# ==========================================
+def detect_ffmpeg():
+    """
+    Detect FFmpeg installation and return path
+    """
+    print("\n" + "="*60)
+    print("🔍 FFMPEG DETECTION SYSTEM - STARTING")
+    print("="*60)
+    
+    # Check common locations
+    ffmpeg_locations = [
+        'ffmpeg',  # In PATH
+        '/usr/bin/ffmpeg',
+        '/usr/local/bin/ffmpeg',
+        '/app/.apt/usr/bin/ffmpeg',  # Heroku buildpack location
+        '/app/vendor/ffmpeg/ffmpeg',
+    ]
+    
+    ffmpeg_path = None
+    ffprobe_path = None
+    
+    # Method 1: Use shutil.which (checks PATH)
+    ffmpeg_in_path = shutil.which('ffmpeg')
+    ffprobe_in_path = shutil.which('ffprobe')
+    
+    if ffmpeg_in_path and ffprobe_in_path:
+        print(f"✅ FFmpeg found in PATH: {ffmpeg_in_path}")
+        print(f"✅ FFprobe found in PATH: {ffprobe_in_path}")
+        return ffmpeg_in_path, True
+    
+    # Method 2: Check specific locations
+    print("⚠️ FFmpeg not in PATH, checking specific locations...")
+    for path in ffmpeg_locations:
+        if os.path.exists(path):
+            ffmpeg_path = path
+            # Check for ffprobe in same directory
+            ffprobe_path = os.path.join(os.path.dirname(path), 'ffprobe')
+            if os.path.exists(ffprobe_path):
+                print(f"✅ FFmpeg found at: {ffmpeg_path}")
+                print(f"✅ FFprobe found at: {ffprobe_path}")
+                return ffmpeg_path, True
+    
+    print("❌ FFmpeg NOT FOUND!")
+    print("⚠️ Will download audio without MP3 conversion")
+    print("="*60)
+    print("🔍 FFMPEG DETECTION SYSTEM - COMPLETE")
+    print("="*60 + "\n")
+    
+    return None, False
+
+FFMPEG_PATH, FFMPEG_AVAILABLE = detect_ffmpeg()
 
 # ==========================================
 # 🔍 CRITICAL: COOKIE DIAGNOSTIC SYSTEM
@@ -130,6 +185,9 @@ os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 def get_ydl_opts():
     print(f"\n🔧 [get_ydl_opts] === STARTING ===")
     print(f"🔧 [get_ydl_opts] COOKIE_PATH from startup: {COOKIE_PATH}")
+    print(f"🔧 [get_ydl_opts] FFMPEG_AVAILABLE: {FFMPEG_AVAILABLE}")
+    if FFMPEG_PATH:
+        print(f"🔧 [get_ydl_opts] FFMPEG_PATH: {FFMPEG_PATH}")
     
     # Double-check cookie file exists NOW
     if COOKIE_PATH and os.path.exists(COOKIE_PATH):
@@ -149,22 +207,28 @@ def get_ydl_opts():
         print(f"❌ [get_ydl_opts] NO COOKIES AVAILABLE!")
     
     opts = {
-        # Simple format selection - let yt-dlp figure it out
-        'format': 'bestaudio/best',
+        # Simple format selection - prefer m4a audio for best compatibility
+        'format': 'bestaudio[ext=m4a]/bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
         'quiet': False,
         'no_warnings': False,
         'extract_flat': False,
         'geo_bypass': True,
         'nocheckcertificate': True,
-        
-        # Convert to MP3 using ffmpeg
-        'postprocessors': [{
+    }
+    
+    # Only add FFmpeg postprocessor if FFmpeg is available
+    if FFMPEG_AVAILABLE and FFMPEG_PATH:
+        print(f"✅ [get_ydl_opts] Adding FFmpeg postprocessor for MP3 conversion")
+        opts['postprocessors'] = [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
-        }],
-    }
+        }]
+        # Specify FFmpeg location
+        opts['ffmpeg_location'] = os.path.dirname(FFMPEG_PATH)
+    else:
+        print(f"⚠️ [get_ydl_opts] FFmpeg not available - will use direct audio format")
     
     # Add cookies if available
     if cookie_file:
@@ -195,7 +259,14 @@ async def download_audio(url: str) -> dict:
                 print(f"📥 [download_audio] Got playlist entry")
             
             file_path = ydl.prepare_filename(info)
-            file_path = os.path.splitext(file_path)[0] + '.mp3'
+            
+            # If FFmpeg is available, the file will be .mp3
+            # Otherwise, it will be the original format (usually .m4a or .webm)
+            if FFMPEG_AVAILABLE:
+                file_path = os.path.splitext(file_path)[0] + '.mp3'
+                print(f"✅ [download_audio] Converted to MP3")
+            else:
+                print(f"✅ [download_audio] Using direct audio format: {os.path.splitext(file_path)[1]}")
             
             print(f"✅ [download_audio] SUCCESS! File: {file_path}")
             print(f"✅ [download_audio] Title: {info.get('title', 'Unknown')}")
@@ -221,6 +292,9 @@ async def download_audio(url: str) -> dict:
                 print(f"❌ [download_audio] DIAGNOSIS: Signature challenge failed!")
             elif "format" in error_str.lower():
                 print(f"❌ [download_audio] DIAGNOSIS: Format selection failed!")
+            elif "ffmpeg" in error_str.lower() or "ffprobe" in error_str.lower():
+                print(f"❌ [download_audio] DIAGNOSIS: FFmpeg error!")
+                print(f"❌ [download_audio] FFmpeg might not be properly installed")
             
             print(f"❌ [download_audio] === END ===\n")
             raise e
@@ -324,7 +398,8 @@ async def play_command(client, message: Message):
             await status_msg.edit("🎵 **Joining VC...**")
             try:
                 await pytgcalls.play(message.chat.id, MediaStream(audio_data['file_path'], audio_parameters=AudioQuality.HIGH))
-                await status_msg.edit(f"▶️ **Playing:** {audio_data['title']}")
+                format_type = "MP3" if FFMPEG_AVAILABLE else "M4A/WebM"
+                await status_msg.edit(f"▶️ **Playing ({format_type}):** {audio_data['title']}")
                 asyncio.create_task(monitor_stream(message.chat.id, audio_data['file_path']))
             except Exception as e:
                 await status_msg.edit(f"❌ **Error joining VC:** {str(e)}")
@@ -340,6 +415,12 @@ async def play_command(client, message: Message):
                 "• Invalid\n"
                 "• Not found\n\n"
                 "Check bot logs for cookie diagnostic info."
+            )
+        elif "ffmpeg" in error_msg.lower() or "ffprobe" in error_msg.lower():
+            await status_msg.edit(
+                "❌ **FFmpeg Error!**\n\n"
+                "FFmpeg is not properly installed on the server.\n"
+                "Please check your Aptfile and buildpack configuration."
             )
         else:
             await status_msg.edit(f"❌ **Error:** {error_msg[:150]}")
@@ -392,9 +473,18 @@ async def queue_command(client, message):
 @app.on_message(filters.command("cookietest", config.COMMAND_PREFIXES) & filters.private)
 async def cookie_test_command(client, message):
     """Manual cookie diagnostic trigger"""
-    await message.reply("🔍 Running cookie diagnostics...")
+    await message.reply("🔍 Running diagnostics...")
     diagnose_cookies()
-    await message.reply("✅ Check bot logs for diagnostic results!")
+    detect_ffmpeg()
+    
+    status = f"**Diagnostic Results:**\n\n"
+    status += f"🍪 Cookies: {'✅ Found' if COOKIE_PATH else '❌ Not Found'}\n"
+    status += f"🎬 FFmpeg: {'✅ Available' if FFMPEG_AVAILABLE else '❌ Not Available'}\n"
+    if FFMPEG_PATH:
+        status += f"📍 FFmpeg Path: `{FFMPEG_PATH}`\n"
+    status += f"\nCheck bot logs for detailed diagnostic info!"
+    
+    await message.reply(status)
 
 __module__ = "Music"
 __help__ = """
@@ -404,11 +494,20 @@ __help__ = """
 • `/stop` - Stop playing and clear queue
 • `/skip` - Skip current song
 • `/queue` - Show current queue
-• `/cookietest` - Test cookie configuration (DM only)
+• `/cookietest` - Test cookie & FFmpeg configuration (DM only)
+
+**Audio Format:**
+• With FFmpeg: MP3 (192kbps)
+• Without FFmpeg: M4A/WebM (direct from YouTube)
 
 **Troubleshooting:**
-If you get cookie errors, check bot logs for diagnostic info.
-Cookies must be in Netscape format from youtube.com while logged in.
+If you get errors, check bot logs for diagnostic info.
 """
 
-print("\n✅ ========== MUSIC MODULE LOADED WITH FULL DIAGNOSTICS ==========\n")
+print(f"\n{'='*60}")
+print(f"✅ MUSIC MODULE LOADED")
+print(f"🍪 Cookies: {'✅ Available' if COOKIE_PATH else '❌ Not Found'}")
+print(f"🎬 FFmpeg: {'✅ Available' if FFMPEG_AVAILABLE else '❌ Not Available'}")
+if FFMPEG_PATH:
+    print(f"📍 FFmpeg: {FFMPEG_PATH}")
+print(f"{'='*60}\n")
