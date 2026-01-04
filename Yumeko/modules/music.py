@@ -12,105 +12,89 @@ from pyrogram import filters, Client
 from pyrogram.types import Message
 
 # ==========================================
-# 🔧 CRITICAL: UNIVERSAL BINARY DOWNLOADER
+# 🔧 1. UNIVERSAL BINARY SETUP (RUSTYPIPE & NODEJS)
 # ==========================================
-def setup_rustypipe():
+def setup_environment():
     """
-    Tries to download rustypipe-botguard from multiple possible mirrors/versions.
+    Sets up the entire environment:
+    1. rustypipe-botguard (For PoTokens)
+    2. node (For executing JS challenges)
     """
-    binary_name = "rustypipe-botguard"
-    install_dir = os.path.join(os.getcwd(), "bin")
-    target_path = os.path.join(install_dir, binary_name)
-    
-    # List of potential URLs with CORRECT filenames and formats
-    URLS_TO_TRY = [
-        # Latest version v0.1.2 (GNU Linux - tar.xz format)
-        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz",
-        # Previous version v0.1.1 (fallback)
-        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.1/rustypipe-botguard-v0.1.1-x86_64-unknown-linux-gnu.tar.xz",
-        # Initial release v0.1.0 (fallback)
-        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.0/rustypipe-botguard-v0.1.0-x86_64-unknown-linux-gnu.tar.xz",
-    ]
+    base_bin_dir = os.path.join(os.getcwd(), "bin")
+    if not os.path.exists(base_bin_dir):
+        os.makedirs(base_bin_dir, exist_ok=True)
 
-    if not os.path.exists(install_dir):
-        os.makedirs(install_dir, exist_ok=True)
+    # Add bin to PATH immediately
+    if base_bin_dir not in os.environ["PATH"]:
+        os.environ["PATH"] = base_bin_dir + os.pathsep + os.environ["PATH"]
+        print(f"✅ DEBUG: Added {base_bin_dir} to PATH")
 
-    # Add to PATH
-    if install_dir not in os.environ["PATH"]:
-        os.environ["PATH"] = install_dir + os.pathsep + os.environ["PATH"]
-        print(f"✅ DEBUG: Added {install_dir} to PATH")
-
-    # Check if we already have a working binary
-    if os.path.exists(target_path):
+    # --- A. SETUP RUSTYPIPE ---
+    rustypipe_path = os.path.join(base_bin_dir, "rustypipe-botguard")
+    if not os.path.exists(rustypipe_path):
+        print("⬇️ DEBUG: Downloading Rustypipe...")
+        # Use the specific Codeberg Archive URL that worked for you
+        url = "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz"
         try:
-            res = subprocess.run([target_path, "--version"], capture_output=True, text=True)
-            if res.returncode == 0:
-                print(f"✅ DEBUG: Existing binary verified: {res.stdout.strip()}")
-                return # It works, no need to download
-            else:
-                print("⚠️ DEBUG: Existing binary broken. Deleting...")
-                os.remove(target_path)
-        except:
-            os.remove(target_path)
-
-    # Loop through URLs until one works
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-    
-    success = False
-    for url in URLS_TO_TRY:
-        print(f"⬇️ DEBUG: Trying {url}...")
-        try:
-            response = requests.get(url, stream=True, timeout=30, headers=headers)
-            if response.status_code == 200:
-                # Download to temporary archive file
-                temp_archive = os.path.join(install_dir, "temp_rustypipe.tar.xz")
-                print(f"📥 DEBUG: Downloading archive...")
-                with open(temp_archive, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                
-                print(f"📦 DEBUG: Extracting archive...")
-                # Extract the tar.xz file
-                try:
-                    with tarfile.open(temp_archive, 'r:xz') as tar:
-                        tar.extractall(install_dir)
-                    
-                    # Remove the archive
-                    os.remove(temp_archive)
-                    print(f"🗑️ DEBUG: Removed temporary archive")
-                except Exception as extract_error:
-                    print(f"❌ DEBUG: Extraction error: {extract_error}")
-                    if os.path.exists(temp_archive):
-                        os.remove(temp_archive)
-                    continue
-                
-                # Make executable
-                if os.path.exists(target_path):
-                    st = os.stat(target_path)
-                    os.chmod(target_path, st.st_mode | stat.S_IEXEC)
-                    print(f"🔐 DEBUG: Made binary executable")
-                    
-                    # Test it
-                    res = subprocess.run([target_path, "--version"], capture_output=True, text=True)
-                    if res.returncode == 0:
-                        print(f"✅ DEBUG: SUCCESS! Downloaded from {url}")
-                        print(f"✅ DEBUG: Version: {res.stdout.strip()}")
-                        success = True
+            r = requests.get(url, stream=True)
+            with open("temp_rp.tar.xz", "wb") as f:
+                f.write(r.content)
+            
+            with tarfile.open("temp_rp.tar.xz", "r:xz") as tar:
+                for member in tar.getnames():
+                    if "rustypipe-botguard" in member and "api" not in member:
+                        extracted = tar.extractfile(member)
+                        with open(rustypipe_path, "wb") as out:
+                            out.write(extracted.read())
                         break
-                    else:
-                        print(f"⚠️ DEBUG: Binary extracted but failed version check")
-                else:
-                    print(f"⚠️ DEBUG: Binary not found after extraction")
-            else:
-                print(f"⚠️ DEBUG: Failed with {response.status_code}")
+            os.chmod(rustypipe_path, 0o755) # Make executable
+            print("✅ DEBUG: Rustypipe Installed.")
         except Exception as e:
-            print(f"❌ DEBUG: Error: {e}")
-    
-    if not success:
-        print("❌ CRITICAL: All download attempts failed. Music playback may fail.")
+            print(f"❌ DEBUG: Rustypipe Setup Failed: {e}")
+        finally:
+            if os.path.exists("temp_rp.tar.xz"): os.remove("temp_rp.tar.xz")
 
-# --- RUN SETUP ---
-setup_rustypipe()
+    # --- B. SETUP NODE.JS (The Fix for 'No JS runtime') ---
+    node_path = os.path.join(base_bin_dir, "node")
+    if not os.path.exists(node_path):
+        print("⬇️ DEBUG: Downloading Node.js (Required for YouTube)...")
+        # Download standalone Node.js binary
+        node_url = "https://nodejs.org/dist/v16.20.0/node-v16.20.0-linux-x64.tar.xz"
+        try:
+            r = requests.get(node_url, stream=True)
+            with open("temp_node.tar.xz", "wb") as f:
+                f.write(r.content)
+            
+            with tarfile.open("temp_node.tar.xz", "r:xz") as tar:
+                # Look for bin/node inside the archive
+                for member in tar.getnames():
+                    if member.endswith("/bin/node"):
+                        extracted = tar.extractfile(member)
+                        with open(node_path, "wb") as out:
+                            out.write(extracted.read())
+                        break
+            os.chmod(node_path, 0o755)
+            print("✅ DEBUG: Node.js Installed.")
+        except Exception as e:
+            print(f"❌ DEBUG: Node.js Setup Failed: {e}")
+        finally:
+            if os.path.exists("temp_node.tar.xz"): os.remove("temp_node.tar.xz")
+
+    # --- VERIFY EVERYTHING ---
+    print("\n🔍 SYSTEM CHECK:")
+    try:
+        rp_ver = subprocess.getoutput("rustypipe-botguard --version")
+        print(f"   • Rustypipe: {rp_ver}")
+    except: print("   • Rustypipe: MISSING")
+    
+    try:
+        node_ver = subprocess.getoutput("node --version")
+        print(f"   • Node.js:   {node_ver}")
+    except: print("   • Node.js:   MISSING")
+    print("-------------------------------------------\n")
+
+# RUN SETUP NOW
+setup_environment()
 
 # ==========================================
 # 📦 IMPORTS
@@ -142,20 +126,38 @@ current_playing = {}
 DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
+# Custom Logger to see EVERYTHING
+class MyLogger:
+    def debug(self, msg):
+        if "google.com/device" in msg:
+            print(f"\n🚨 LOGIN REQUIRED: {msg}\n")
+        elif "PoToken" in msg or "rustypipe" in msg:
+            print(f"🟢 POTOKEN: {msg}")
+        # Uncomment below to see literally everything (noisy)
+        # else: print(f"YT-DLP: {msg}")
+
+    def info(self, msg): pass
+    def warning(self, msg): print(f"⚠️ WARN: {msg}")
+    def error(self, msg): print(f"🛑 ERROR: {msg}")
+
 def get_ydl_opts():
-    return {
+    opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
+        'logger': MyLogger(), # Use our custom logger
         'verbose': True,
         'quiet': False,
-        'no_warnings': True,
+        'no_warnings': False,
         'extract_flat': False,
         'geo_bypass': True,
         'nocheckcertificate': True,
         'prefer_ffmpeg': True,
+        
+        # KEY SETTINGS
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'web'],
+                # iOS is the only one that uses PoToken reliably
+                'player_client': ['ios', 'android', 'web'],
                 'skip': ['hls', 'dash'],
                 'player_skip': ['js', 'configs', 'web']
             }
@@ -166,16 +168,30 @@ def get_ydl_opts():
             'preferredquality': '192',
         }],
     }
+    return opts
 
 async def download_audio(url: str) -> dict:
     ydl_opts = get_ydl_opts()
     print(f"🔍 DEBUG: Downloading {url}")
+    
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = await asyncio.to_thread(ydl.extract_info, url, download=True)
-        if 'entries' in info: info = info['entries'][0]
-        file_path = ydl.prepare_filename(info)
-        file_path = os.path.splitext(file_path)[0] + '.mp3'
-        return {'title': info.get('title', 'Unknown'), 'duration': info.get('duration', 0), 'file_path': file_path, 'url': url}
+        try:
+            info = await asyncio.to_thread(ydl.extract_info, url, download=True)
+            if 'entries' in info: info = info['entries'][0]
+            
+            file_path = ydl.prepare_filename(info)
+            file_path = os.path.splitext(file_path)[0] + '.mp3'
+            
+            return {
+                'title': info.get('title', 'Unknown'),
+                'duration': info.get('duration', 0),
+                'file_path': file_path,
+                'url': url
+            }
+        except Exception as e:
+            # If PoToken fails, this specific error will print
+            print(f"❌ CRITICAL DOWNLOAD FAIL: {e}")
+            raise e
 
 def is_youtube_url(url: str) -> bool:
     return bool(re.match(r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/', url))
@@ -231,7 +247,7 @@ async def play_command(client, message: Message):
             await status_msg.edit("❌ **No results found!**")
             return
         
-        await status_msg.edit("⬇ **Downloading...**")
+        await status_msg.edit("⏬ **Downloading...**")
         audio_data = await download_audio(url)
         
         song_info = {
