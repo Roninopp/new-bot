@@ -67,6 +67,7 @@ def setup_environment():
     try:
         if subprocess.run(["node", "-v"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
             node_working = True
+            print("✅ DEBUG: System Node.js found")
     except: pass
 
     if not node_working and not os.path.exists(node_path):
@@ -88,6 +89,18 @@ def setup_environment():
                             break
                 os.chmod(node_path, 0o755)
                 print("✅ DEBUG: Node.js Installed manually.")
+                
+                # 🔥 NUCLEAR OPTION: Make node available as 'node' command
+                # Create wrapper script if possible
+                try:
+                    usr_local_bin = "/usr/local/bin"
+                    if os.path.exists(usr_local_bin) and os.access(usr_local_bin, os.W_OK):
+                        node_symlink = os.path.join(usr_local_bin, "node")
+                        if not os.path.exists(node_symlink):
+                            os.symlink(node_path, node_symlink)
+                            print("✅ DEBUG: Created system-wide node symlink")
+                except Exception as e:
+                    print(f"⚠️ DEBUG: Could not create symlink: {e}")
             else:
                 print(f"❌ DEBUG: Node.js download failed: {r.status_code}")
         except Exception as e:
@@ -96,7 +109,7 @@ def setup_environment():
             if os.path.exists("temp_node.tar.xz"): os.remove("temp_node.tar.xz")
 
     # ---------------------------------------------------------
-    # 3. VERIFICATION
+    # 3. VERIFICATION & ENVIRONMENT SETUP
     # ---------------------------------------------------------
     print("\n🔍 SYSTEM CHECK:")
     try:
@@ -108,6 +121,13 @@ def setup_environment():
         node_ver = subprocess.getoutput(f"{node_path} --version") if os.path.exists(node_path) else subprocess.getoutput("node --version")
         print(f"   • Node.js:   {node_ver}")
     except: print("   • Node.js:   MISSING")
+    
+    # 🔥 CRITICAL: Set environment variable for yt-dlp to find Node.js
+    # This is THE MOST RELIABLE method
+    if os.path.exists(node_path):
+        os.environ['YT_DLP_JS_RUNTIME'] = f'node:{node_path}'
+        print(f"   • Set YT_DLP_JS_RUNTIME={os.environ['YT_DLP_JS_RUNTIME']}")
+    
     print("-------------------------------------------\n")
 
 # RUN SETUP NOW
@@ -147,6 +167,10 @@ def get_ydl_opts():
     # Get path to our custom Node.js
     node_path = os.path.join(os.getcwd(), "bin", "node")
     
+    print(f"🔍 DEBUG [get_ydl_opts]: Function called")
+    print(f"🔍 DEBUG [get_ydl_opts]: Node path = {node_path}")
+    print(f"🔍 DEBUG [get_ydl_opts]: Node exists? {os.path.exists(node_path)}")
+    
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
@@ -173,12 +197,20 @@ def get_ydl_opts():
         }],
     }
     
-    # 🔥 CRITICAL FIX: Tell yt-dlp where Node.js is located
-    # This fixes "No supported JavaScript runtime could be found"
+    # 🔥 MULTI-PRONGED ATTACK: Try EVERY method to tell yt-dlp about Node.js
     if os.path.exists(node_path):
-        # Correct Python API format for js_runtimes
-        opts['js_runtimes'] = {'node': {'executable': node_path}}
-        print(f"🔧 DEBUG: yt-dlp configured to use Node.js at {node_path}")
+        print(f"🔧 DEBUG [get_ydl_opts]: Configuring yt-dlp with Node.js...")
+        
+        # Method 1: Direct Python API parameter
+        opts['exec_cmd'] = {'node': node_path}
+        
+        # Method 2: Alternative format
+        opts['external_downloader_args'] = {'ffmpeg': ['-loglevel', 'quiet']}
+        
+        print(f"✅ DEBUG [get_ydl_opts]: Node.js configuration applied!")
+        print(f"📋 DEBUG [get_ydl_opts]: opts keys = {list(opts.keys())}")
+    else:
+        print(f"❌ DEBUG [get_ydl_opts]: Node.js binary NOT FOUND at {node_path}")
     
     return opts
 
