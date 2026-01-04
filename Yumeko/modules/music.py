@@ -158,11 +158,12 @@ def get_ydl_opts():
         'geo_bypass': True,
         'nocheckcertificate': True,
         
-        # Android client for maximum compatibility
+        # 🔥 CRITICAL FIX: Use clients that SUPPORT cookies!
+        # Android client does NOT support cookies, so we use web/ios
         'extractor_args': {
             'youtube': {
-                'player_client': ['android'],
-                'skip': ['webpage', 'configs'],
+                'player_client': ['ios', 'web'],  # Both support cookies!
+                'skip': ['webpage'],
             }
         },
         
