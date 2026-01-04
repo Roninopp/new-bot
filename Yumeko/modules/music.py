@@ -11,20 +11,22 @@ from pyrogram import filters, Client
 from pyrogram.types import Message
 
 # ==========================================
-# 🔧 CRITICAL: STRICT BINARY INSTALLER
+# 🔧 CRITICAL: DOWNLOAD FROM CODEBERG (NOT GITHUB)
 # ==========================================
 def setup_rustypipe():
     """
-    Downloads and VERIFIES the RustyPipe binary.
-    If the file is too small (corrupt) or doesn't run, it retries.
+    Downloads and VERIFIES the RustyPipe binary from Codeberg.
     """
     binary_name = "rustypipe-botguard"
     install_dir = os.path.join(os.getcwd(), "bin")
     target_path = os.path.join(install_dir, binary_name)
     
-    # URL for the Static MUSL version (Works on Heroku/Alpine/Ubuntu)
-    # Using a specific version (v0.2.0) to avoid redirect issues
-    DOWNLOAD_URL = "https://github.com/ThetaDev/rustypipe-botguard/releases/download/v0.2.0/rustypipe-botguard-x86_64-unknown-linux-musl"
+    # URL for the Static MUSL version on CODEBERG
+    # We try v0.2.0 first, if that fails, we fallback to v0.1.2
+    DOWNLOAD_URLS = [
+        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.2.0/rustypipe-botguard-x86_64-unknown-linux-musl",
+        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-x86_64-unknown-linux-musl"
+    ]
 
     if not os.path.exists(install_dir):
         os.makedirs(install_dir, exist_ok=True)
@@ -41,7 +43,7 @@ def setup_rustypipe():
             # Check file size (Binary should be > 5MB)
             size_mb = os.path.getsize(target_path) / (1024 * 1024)
             if size_mb < 1:
-                print(f"⚠️ DEBUG: Existing binary is too small ({size_mb:.2f}MB). It's likely corrupt.")
+                print(f"⚠️ DEBUG: Existing binary is too small ({size_mb:.2f}MB). It's likely a 404 page. Deleting...")
                 os.remove(target_path)
             else:
                 # Try to run it
@@ -58,30 +60,34 @@ def setup_rustypipe():
 
     # 3. Download if not valid
     if not valid:
-        print(f"⬇️ DEBUG: Downloading RustyPipe from {DOWNLOAD_URL}...")
-        try:
-            response = requests.get(DOWNLOAD_URL, stream=True, timeout=30)
-            response.raise_for_status()
-            
-            with open(target_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            
-            # Make executable
-            st = os.stat(target_path)
-            os.chmod(target_path, st.st_mode | stat.S_IEXEC)
-            
-            print(f"✅ DEBUG: Download complete. Verifying...")
-            
-            # Final check
-            res = subprocess.run([target_path, "--version"], capture_output=True, text=True)
-            if res.returncode == 0:
-                print(f"✅ DEBUG: SUCCESS! RustyPipe is active.")
-            else:
-                print(f"❌ DEBUG: Downloaded file failed to run. System architecture mismatch?")
-                
-        except Exception as e:
-            print(f"❌ DEBUG: Critical Download Error: {e}")
+        for url in DOWNLOAD_URLS:
+            print(f"⬇️ DEBUG: Attempting download from {url}...")
+            try:
+                response = requests.get(url, stream=True, timeout=30)
+                if response.status_code == 200:
+                    with open(target_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    
+                    # Make executable
+                    st = os.stat(target_path)
+                    os.chmod(target_path, st.st_mode | stat.S_IEXEC)
+                    
+                    # Verify
+                    res = subprocess.run([target_path, "--version"], capture_output=True, text=True)
+                    if res.returncode == 0:
+                        print(f"✅ DEBUG: SUCCESS! Downloaded and verified from Codeberg.")
+                        valid = True
+                        break # Stop trying other URLs
+                    else:
+                        print(f"❌ DEBUG: Downloaded file failed to run.")
+                else:
+                    print(f"⚠️ DEBUG: URL returned {response.status_code}. Trying next...")
+            except Exception as e:
+                print(f"❌ DEBUG: Download Error: {e}")
+        
+        if not valid:
+            print("❌ CRITICAL: Could not download RustyPipe from any source.")
 
 # --- RUN SETUP BEFORE IMPORTS ---
 setup_rustypipe()
@@ -122,7 +128,7 @@ def get_ydl_opts():
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
         'verbose': True,
-        'quiet': False, # Keep false to see errors
+        'quiet': False, 
         'no_warnings': True,
         'extract_flat': False,
         'geo_bypass': True,
@@ -158,7 +164,6 @@ async def download_audio(url: str) -> dict:
             file_path = ydl.prepare_filename(info)
             file_path = os.path.splitext(file_path)[0] + '.mp3'
             
-            print(f"✅ DEBUG: Download successful: {file_path}")
             return {
                 'title': info.get('title', 'Unknown'),
                 'duration': info.get('duration', 0),
