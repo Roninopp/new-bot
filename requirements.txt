@@ -34,7 +34,12 @@ youtube-search-python
 beautifulsoup4
 Pyrofork
 TgCrypto
-py-tgcalls>=1.2.0
-yt-dlp>=2024.09.27
-yt-dlp-get-pot
-yt-dlp-get-pot-rustypipe
+
+
+# ===== MUSIC BOT REQUIREMENTS (FROM WORKING BOT) =====
+ntgcalls==2.0.6
+py-tgcalls==2.2.8
+ffmpeg-python>=0.2.0
+yt-dlp>=2024.8.6
+youtube-search>=2.1.2
+youtube-search-python>=1.6.6
