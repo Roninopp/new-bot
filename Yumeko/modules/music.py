@@ -64,9 +64,32 @@ FFMPEG_PATH, FFMPEG_AVAILABLE = detect_ffmpeg()
 # If FFmpeg is found, add its directory to PATH
 if FFMPEG_AVAILABLE and FFMPEG_PATH:
     ffmpeg_dir = os.path.dirname(FFMPEG_PATH)
-    if ffmpeg_dir not in os.environ.get('PATH', ''):
-        os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
-        print(f"✅ Added FFmpeg directory to PATH: {ffmpeg_dir}\n")
+    current_path = os.environ.get('PATH', '')
+    
+    print(f"\n🔧 PATH MODIFICATION:")
+    print(f"   FFmpeg directory: {ffmpeg_dir}")
+    print(f"   Current PATH: {current_path[:200]}...")
+    
+    if ffmpeg_dir not in current_path:
+        os.environ['PATH'] = ffmpeg_dir + os.pathsep + current_path
+        print(f"   ✅ Added to PATH")
+    else:
+        print(f"   ℹ️ Already in PATH")
+    
+    print(f"   New PATH: {os.environ['PATH'][:200]}...")
+    
+    # Verify ffmpeg is now accessible
+    import subprocess
+    try:
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            print(f"   ✅ FFmpeg is accessible via subprocess!")
+        else:
+            print(f"   ❌ FFmpeg subprocess test failed!")
+    except Exception as e:
+        print(f"   ❌ FFmpeg subprocess error: {e}")
+    
+    print()
 
 # ==========================================
 # 🔍 CRITICAL: COOKIE DIAGNOSTIC SYSTEM
