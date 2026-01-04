@@ -9,7 +9,6 @@ ffmpeg-python
 gpytranslate
 gtts
 httpx[http2]==0.27.2
-lexica-api
 motor
 moviepy
 numpy
@@ -19,7 +18,6 @@ pillow
 psutil
 pyjokes
 pytz
-python-arq
 python-telegram-bot
 requests
 rich
@@ -36,3 +34,7 @@ youtube-search-python
 beautifulsoup4
 Pyrofork
 TgCrypto
+py-tgcalls>=0.9.7
+yt-dlp>=2024.1.0
+yt-dlp-rustypipe-plugin>=0.1.0
+ffmpeg-python
