@@ -149,8 +149,8 @@ def get_ydl_opts():
         print(f"❌ [get_ydl_opts] NO COOKIES AVAILABLE!")
     
     opts = {
-        # Try multiple format fallbacks
-        'format': 'bestaudio[ext=m4a]/bestaudio/best',
+        # Simple format selection - let yt-dlp figure it out
+        'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
         'quiet': False,
         'no_warnings': False,
@@ -158,14 +158,8 @@ def get_ydl_opts():
         'geo_bypass': True,
         'nocheckcertificate': True,
         
-        # 🔥 CRITICAL FIX: Use clients that SUPPORT cookies!
-        # Android client does NOT support cookies, so we use web/ios
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['ios', 'web'],  # Both support cookies!
-                'skip': ['webpage'],
-            }
-        },
+        # 🔥 DON'T force any client - let yt-dlp choose based on cookies
+        # This allows it to use whatever client works best with authentication
         
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
