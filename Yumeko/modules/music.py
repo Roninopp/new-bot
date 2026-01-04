@@ -37,59 +37,55 @@ def detect_ffmpeg():
     if ffmpeg_in_path and ffprobe_in_path:
         print(f"✅ FFmpeg found in PATH: {ffmpeg_in_path}")
         print(f"✅ FFprobe found in PATH: {ffprobe_in_path}")
-        return ffmpeg_in_path, True
-    
-    # Method 2: Check specific locations
-    print("⚠️ FFmpeg not in PATH, checking specific locations...")
-    for path in ffmpeg_locations:
-        if os.path.exists(path):
-            ffmpeg_path = path
-            # Check for ffprobe in same directory
-            ffprobe_path = os.path.join(os.path.dirname(path), 'ffprobe')
-            if os.path.exists(ffprobe_path):
-                print(f"✅ FFmpeg found at: {ffmpeg_path}")
-                print(f"✅ FFprobe found at: {ffprobe_path}")
-                return ffmpeg_path, True
-    
-    print("❌ FFmpeg NOT FOUND!")
-    print("⚠️ Will download audio without MP3 conversion")
-    print("="*60)
-    print("🔍 FFMPEG DETECTION SYSTEM - COMPLETE")
-    print("="*60 + "\n")
-    
-    return None, False
-
-FFMPEG_PATH, FFMPEG_AVAILABLE = detect_ffmpeg()
-
-# If FFmpeg is found, add its directory to PATH
-if FFMPEG_AVAILABLE and FFMPEG_PATH:
-    ffmpeg_dir = os.path.dirname(FFMPEG_PATH)
-    current_path = os.environ.get('PATH', '')
-    
-    print(f"\n🔧 PATH MODIFICATION:")
-    print(f"   FFmpeg directory: {ffmpeg_dir}")
-    print(f"   Current PATH: {current_path[:200]}...")
-    
-    if ffmpeg_dir not in current_path:
-        os.environ['PATH'] = ffmpeg_dir + os.pathsep + current_path
-        print(f"   ✅ Added to PATH")
+        ffmpeg_path = ffmpeg_in_path
     else:
-        print(f"   ℹ️ Already in PATH")
+        # Method 2: Check specific locations
+        print("⚠️ FFmpeg not in PATH, checking specific locations...")
+        for path in ffmpeg_locations:
+            if os.path.exists(path):
+                ffmpeg_path = path
+                # Check for ffprobe in same directory
+                ffprobe_path = os.path.join(os.path.dirname(path), 'ffprobe')
+                if os.path.exists(ffprobe_path):
+                    print(f"✅ FFmpeg found at: {ffmpeg_path}")
+                    print(f"✅ FFprobe found at: {ffprobe_path}")
+                    break
     
-    print(f"   New PATH: {os.environ['PATH'][:200]}...")
+    if not ffmpeg_path:
+        print("❌ FFmpeg NOT FOUND!")
+        print("⚠️ Will download audio without MP3 conversion")
+        print("="*60)
+        print("🔍 FFMPEG DETECTION SYSTEM - COMPLETE")
+        print("="*60 + "\n")
+        return None, False
     
-    # Verify ffmpeg is now accessible
+    # Test if ffmpeg actually works
+    print("\n🧪 Testing FFmpeg executable...")
     import subprocess
     try:
-        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        result = subprocess.run([ffmpeg_path, '-version'], capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
-            print(f"   ✅ FFmpeg is accessible via subprocess!")
+            print(f"✅ FFmpeg works! Output: {result.stdout[:100]}")
+            print("="*60)
+            print("🔍 FFMPEG DETECTION SYSTEM - COMPLETE")
+            print("="*60 + "\n")
+            return ffmpeg_path, True
         else:
-            print(f"   ❌ FFmpeg subprocess test failed!")
+            print(f"❌ FFmpeg test failed with return code: {result.returncode}")
+            print("⚠️ Will use direct audio without conversion")
+            print("="*60)
+            print("🔍 FFMPEG DETECTION SYSTEM - COMPLETE")  
+            print("="*60 + "\n")
+            return None, False
     except Exception as e:
-        print(f"   ❌ FFmpeg subprocess error: {e}")
-    
-    print()
+        print(f"❌ FFmpeg test error: {e}")
+        print("⚠️ Will use direct audio without conversion")
+        print("="*60)
+        print("🔍 FFMPEG DETECTION SYSTEM - COMPLETE")
+        print("="*60 + "\n")
+        return None, False
+
+FFMPEG_PATH, FFMPEG_AVAILABLE = detect_ffmpeg()
 
 # ==========================================
 # 🔍 CRITICAL: COOKIE DIAGNOSTIC SYSTEM
