@@ -1,9 +1,0 @@
-{
-  "name": "music-bot-runtime",
-  "version": "1.0.0",
-  "description": "Node.js runtime for yt-dlp",
-  "engines": {
-    "node": "18.x"
-  },
-  "dependencies": {}
-}
