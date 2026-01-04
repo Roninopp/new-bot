@@ -1,1 +1,1 @@
-worker: python3 -m Yumeko  
+worker: bash install_rustypipe.sh && python3 -m Yumeko
