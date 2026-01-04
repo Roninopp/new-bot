@@ -1,4 +1,9 @@
 class config:
+
+    # === MUSIC BOT CONFIG ===
+API_ID = 7217645  # From my.telegram.org
+API_HASH = "78ba6352dd5cdc166fdef5aa84ba7c67"  # From my.telegram.org
+USERBOT_SESSION = "BQFIGLYAqikS4rDDZuGJ5LCf77uHUX1QbHvQBz6JMb_nRuZMf47HvOcd_CYm2Fpplfw25_SZ05iK7mwlRq4pMqo7Mgn-Fus-4rIkcvnD5TtztrfSWccfGUnnxa7KwsbsQEIXXDw2r3sO-jL4D-eJKQlCF1K2SANN0du5yDWoBDfTbj6T45qxMKElYFNVq1eJJXc6NwdFfyA239k7T46vOPq7vhRyzR7MoVzoXt7MYUrlNncLS4hfphDsBCnUAElDUo5y-V9TJRcMsnNt-VnO4mRtVoWrSOb1S8G3djlq3K-sjQlQnFDjEVwh0DvVSw4lc0D2uYmJy99HBBAyJ7GZbVLH-DQ1ZQAAAAHEV5BpAA"  # From Replit
     
     #Client
     GEMINI_API_KEY = "AIzaSyB_5TqHiE7Z7jQzXKCzCaCBSncfT5uxXDw"
