@@ -1,4 +1,5 @@
 aiofiles
+lexica
 Python_ARQ
 aiohttp==3.9.5
 apscheduler
