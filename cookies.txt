@@ -1,0 +1,8 @@
+# Netscape HTTP Cookie File
+.youtube.com  TRUE  /  TRUE  0  PREF  f4=4000000&tz=Asia.Calcutta
+.youtube.com  TRUE  /  TRUE  0  APISID  ZN7asTv9XbMOgoiN/AWlC4wvHKAIvtVPoI
+.youtube.com  TRUE  /  TRUE  0  SAPISID  i1CWEN0yYV23GGs8/AIFdSDWwlV94CfTzK
+.youtube.com  TRUE  /  TRUE  0  __Secure-1PAPISID  i1CWEN0yYV23GGs8/AIFdSDWwlV94CfTzK
+.youtube.com  TRUE  /  TRUE  0  __Secure-3PAPISID  i1CWEN0yYV23GGs8/AIFdSDWwlV94CfTzK
+.youtube.com  TRUE  /  TRUE  0  SID  g.a0005QgJwVhN6xs-8MMFYGMvpdmP8c8OlTb_qaBB17MS7nwF8FUpFdsw5meebZptozpNG0nnugACgYKAY4SARQSFQHGX2MimHxig22WcqUrr5aNHkFnthoVAUF8yKo02Jgq3in_scY93KPUPdwE0076
+.youtube.com  TRUE  /  TRUE  0  SIDCC  AKEyXzXCPcE0t6UQRA137l2CMvKvZxOPIfnObsfPxfvwIO_uLB6IqEg5Z2VbbuDwAZxu9V4J
