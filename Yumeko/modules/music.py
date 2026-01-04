@@ -5,65 +5,89 @@ import stat
 import shutil
 import subprocess
 import logging
+import requests  # We use requests for reliable downloading
 from typing import Optional
 from pyrogram import filters, Client
 from pyrogram.types import Message
 
 # ==========================================
-# 🔧 CRITICAL: SETUP BINARY BEFORE IMPORTS
+# 🔧 CRITICAL: STRICT BINARY INSTALLER
 # ==========================================
 def setup_rustypipe():
     """
-    Installs the Static MUSL binary.
-    Runs BEFORE yt-dlp imports to ensure the plugin finds it.
+    Downloads and VERIFIES the RustyPipe binary.
+    If the file is too small (corrupt) or doesn't run, it retries.
     """
     binary_name = "rustypipe-botguard"
     install_dir = os.path.join(os.getcwd(), "bin")
     target_path = os.path.join(install_dir, binary_name)
     
-    # 1. Setup PATH
+    # URL for the Static MUSL version (Works on Heroku/Alpine/Ubuntu)
+    # Using a specific version (v0.2.0) to avoid redirect issues
+    DOWNLOAD_URL = "https://github.com/ThetaDev/rustypipe-botguard/releases/download/v0.2.0/rustypipe-botguard-x86_64-unknown-linux-musl"
+
     if not os.path.exists(install_dir):
         os.makedirs(install_dir, exist_ok=True)
 
+    # 1. Add to PATH immediately
     if install_dir not in os.environ["PATH"]:
-        os.environ["PATH"] += os.pathsep + install_dir
-        print(f"✅ DEBUG: Added {install_dir} to PATH")
+        os.environ["PATH"] = install_dir + os.pathsep + os.environ["PATH"]
+        print(f"✅ DEBUG: Prepend {install_dir} to PATH")
 
-    # 2. Force Re-Download if broken (Exec format error fix)
-    need_download = True
+    # 2. Check existing binary validity
+    valid = False
     if os.path.exists(target_path):
         try:
-            # Test run
-            result = subprocess.run([target_path, "--version"], capture_output=True, text=True)
-            if result.returncode == 0:
-                print(f"✅ DEBUG: Binary is valid: {result.stdout.strip()}")
-                need_download = False
-            else:
-                print("⚠️ DEBUG: Binary is broken. Deleting...")
+            # Check file size (Binary should be > 5MB)
+            size_mb = os.path.getsize(target_path) / (1024 * 1024)
+            if size_mb < 1:
+                print(f"⚠️ DEBUG: Existing binary is too small ({size_mb:.2f}MB). It's likely corrupt.")
                 os.remove(target_path)
-        except OSError:
-            print("⚠️ DEBUG: Binary cannot execute (Exec format error). Deleting...")
-            os.remove(target_path)
+            else:
+                # Try to run it
+                res = subprocess.run([target_path, "--version"], capture_output=True, text=True)
+                if res.returncode == 0:
+                    print(f"✅ DEBUG: Binary verified: {res.stdout.strip()}")
+                    valid = True
+                else:
+                    print(f"⚠️ DEBUG: Binary failed to run. Deleting...")
+                    os.remove(target_path)
+        except Exception as e:
+            print(f"⚠️ DEBUG: Error checking binary: {e}")
+            if os.path.exists(target_path): os.remove(target_path)
 
-    # 3. Download STATIC MUSL Version (Safest for Heroku)
-    if need_download:
-        print(f"⬇️ DEBUG: Downloading RustyPipe (MUSL Static Version)...")
-        # This URL is the most compatible version
-        url = "https://github.com/ThetaDev/rustypipe-botguard/releases/latest/download/rustypipe-botguard-x86_64-unknown-linux-musl"
-        
+    # 3. Download if not valid
+    if not valid:
+        print(f"⬇️ DEBUG: Downloading RustyPipe from {DOWNLOAD_URL}...")
         try:
-            subprocess.run(["curl", "-L", "-o", target_path, url], check=True)
+            response = requests.get(DOWNLOAD_URL, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            with open(target_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            # Make executable
             st = os.stat(target_path)
             os.chmod(target_path, st.st_mode | stat.S_IEXEC)
-            print(f"✅ DEBUG: Installed successfully.")
+            
+            print(f"✅ DEBUG: Download complete. Verifying...")
+            
+            # Final check
+            res = subprocess.run([target_path, "--version"], capture_output=True, text=True)
+            if res.returncode == 0:
+                print(f"✅ DEBUG: SUCCESS! RustyPipe is active.")
+            else:
+                print(f"❌ DEBUG: Downloaded file failed to run. System architecture mismatch?")
+                
         except Exception as e:
-            print(f"❌ DEBUG: Download failed: {e}")
+            print(f"❌ DEBUG: Critical Download Error: {e}")
 
-# --- RUN SETUP NOW ---
+# --- RUN SETUP BEFORE IMPORTS ---
 setup_rustypipe()
 
 # ==========================================
-# 📦 NOW IMPORT YT-DLP
+# 📦 NOW IMPORT LIBRARIES
 # ==========================================
 import yt_dlp
 from pytgcalls import PyTgCalls
@@ -77,7 +101,6 @@ from Yumeko.decorator.errors import error
 # 🎵 MUSIC CLIENT SETUP
 # ==========================================
 
-# Create userbot client for voice chat
 userbot = Client(
     "music_userbot",
     api_id=config.API_ID,
@@ -85,30 +108,28 @@ userbot = Client(
     session_string=config.USERBOT_SESSION
 )
 
-# Initialize PyTgCalls with USERBOT
 pytgcalls = PyTgCalls(userbot)
 
-# Queue system
 music_queue = {}
 current_playing = {}
 
-# Download folder
 DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 def get_ydl_opts():
+    """Configure yt-dlp with automatic po_token generation"""
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
         'verbose': True,
-        'quiet': False,
+        'quiet': False, # Keep false to see errors
         'no_warnings': True,
         'extract_flat': False,
         'geo_bypass': True,
         'nocheckcertificate': True,
         'prefer_ffmpeg': True,
         
-        # Force iOS to use the Token
+        # Force iOS client to trigger the PoToken plugin
         'extractor_args': {
             'youtube': {
                 'player_client': ['ios', 'web'],
@@ -137,6 +158,7 @@ async def download_audio(url: str) -> dict:
             file_path = ydl.prepare_filename(info)
             file_path = os.path.splitext(file_path)[0] + '.mp3'
             
+            print(f"✅ DEBUG: Download successful: {file_path}")
             return {
                 'title': info.get('title', 'Unknown'),
                 'duration': info.get('duration', 0),
@@ -145,7 +167,7 @@ async def download_audio(url: str) -> dict:
                 'url': url
             }
         except Exception as e:
-            print(f"❌ DEBUG: Download failed: {str(e)}")
+            print(f"❌ DEBUG: Download failed with error: {str(e)}")
             raise Exception(f"Download failed: {str(e)}")
 
 def is_youtube_url(url: str) -> bool:
@@ -318,7 +340,6 @@ async def queue_command(client, message: Message):
     if not current:
         await message.reply("❌ **Nothing playing.**")
         return
-    
     queue = get_queue(chat_id)
     text = f"▶️ **Now Playing:**\n🎵 {current['title']}\n\n"
     if queue:
