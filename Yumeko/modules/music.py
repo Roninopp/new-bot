@@ -1,6 +1,9 @@
 import asyncio
 import os
 import re
+import stat
+import shutil
+import subprocess
 from typing import Optional
 from pyrogram import filters, Client
 from pyrogram.types import Message
@@ -11,6 +14,54 @@ from Yumeko import app
 from config import config
 from Yumeko.decorator.save import save
 from Yumeko.decorator.errors import error
+
+# ==========================================
+# 🔧 AUTO-INSTALLER FOR POTOKEN (RUSTYPIPE)
+# ==========================================
+def install_rustypipe():
+    """
+    Checks if the RustyPipe binary exists. If not, downloads and installs it.
+    This is REQUIRED for the PoToken to work on Heroku/Docker.
+    """
+    binary_name = "rustypipe-botguard"
+    print(f"🔍 DEBUG: Checking for {binary_name} binary...")
+
+    # 1. Check if it's already in the system PATH
+    if shutil.which(binary_name):
+        print(f"✅ DEBUG: {binary_name} found in PATH!")
+        return
+
+    # 2. If not found, define an install location (User's local bin)
+    install_dir = os.path.join(os.getcwd(), "bin") # Install in current bot folder/bin to be safe
+    target_path = os.path.join(install_dir, binary_name)
+    
+    if not os.path.exists(install_dir):
+        os.makedirs(install_dir, exist_ok=True)
+
+    # 3. Download the binary
+    print(f"⚠️ DEBUG: Binary NOT found. Downloading to {target_path}...")
+    url = "https://github.com/ThetaDev/rustypipe-botguard/releases/latest/download/rustypipe-botguard-x86_64-unknown-linux-musl"
+    
+    try:
+        subprocess.run(["curl", "-L", "-o", target_path, url], check=True)
+        
+        # 4. Make it executable (chmod +x)
+        st = os.stat(target_path)
+        os.chmod(target_path, st.st_mode | stat.S_IEXEC)
+        
+        # 5. Add to PATH variable for this session so yt-dlp can find it
+        os.environ["PATH"] += os.pathsep + install_dir
+        
+        print(f"✅ DEBUG: Successfully installed and added to PATH: {target_path}")
+    except Exception as e:
+        print(f"❌ DEBUG: Failed to install RustyPipe: {e}")
+
+# RUN INSTALLER IMMEDIATELY
+install_rustypipe()
+
+# ==========================================
+# 🎵 MUSIC CLIENT SETUP
+# ==========================================
 
 # Create userbot client for voice chat
 userbot = Client(
@@ -40,7 +91,7 @@ def get_ydl_opts():
         # ENABLE VERBOSE LOGGING FOR DEBUGGING
         'verbose': True,
         'quiet': False,
-        'no_warnings': False,
+        'no_warnings': True, # Changed to True to reduce spam, debug prints cover important stuff
         
         'extract_flat': False,
         'geo_bypass': True,
@@ -48,10 +99,12 @@ def get_ydl_opts():
         'prefer_ffmpeg': True,
         
         # ENABLE PO_TOKEN AUTO-GENERATION via RustyPipe
+        # We force 'ios' client because it triggers the token generator
         'extractor_args': {
             'youtube': {
                 'player_client': ['ios', 'web'],
                 'skip': ['hls', 'dash'],
+                'player_skip': ['js', 'configs', 'web'] # SKIP web/js to force PoToken usage
             }
         },
         
@@ -64,7 +117,6 @@ def get_ydl_opts():
     
     # DEBUG: Print yt-dlp version and check if rustypipe plugin is loaded
     print(f"🔍 DEBUG: yt-dlp options configured")
-    print(f"🔍 DEBUG: Checking for rustypipe plugin...")
     
     return opts
 
@@ -73,21 +125,21 @@ async def download_audio(url: str) -> dict:
     ydl_opts = get_ydl_opts()
     
     print(f"🔍 DEBUG: Starting download for: {url}")
-    print(f"🔍 DEBUG: yt-dlp options: {ydl_opts.get('extractor_args', {})}")
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            # Check yt-dlp version and plugins
+            # Check yt-dlp version
             print(f"🔍 DEBUG: yt-dlp version: {yt_dlp.version.__version__}")
             
             # Try to check if plugin is loaded
             try:
-                from yt_dlp_plugins.extractor import rustypipe
-                print("✅ DEBUG: RustyPipe plugin is LOADED!")
+                # Note: The import path might vary slightly depending on installed version, 
+                # but this check is just for debugging.
+                import yt_dlp_plugins.extractor.rustypipe as rp
+                print("✅ DEBUG: RustyPipe plugin python module found!")
             except ImportError:
-                print("❌ DEBUG: RustyPipe plugin NOT found!")
-                print("❌ This is why po_token is not working!")
-            
+                print("⚠️ DEBUG: Could not import rustypipe module directly (this is normal if installed via pip plugins), relying on internal loading.")
+
             info = await asyncio.to_thread(ydl.extract_info, url, download=True)
             
             if 'entries' in info:
