@@ -28,13 +28,12 @@ tgcrypto
 unidecode
 uvloop
 lyricsgenius
-yt-dlp
 youtube-search
 youtube-search-python
 beautifulsoup4
 Pyrofork
 TgCrypto
-py-tgcalls>=0.9.7
-yt-dlp>=2024.1.0
-yt-dlp-rustypipe-plugin>=0.1.0
-ffmpeg-python
+pytgcalls>=1.2.0
+yt-dlp>=2024.09.27
+yt-dlp-get-pot
+yt-dlp-get-pot-rustypipe
