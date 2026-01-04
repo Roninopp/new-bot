@@ -36,8 +36,12 @@ def get_ydl_opts():
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
-        'quiet': True,
-        'no_warnings': True,
+        
+        # ENABLE VERBOSE LOGGING FOR DEBUGGING
+        'verbose': True,
+        'quiet': False,
+        'no_warnings': False,
+        
         'extract_flat': False,
         'geo_bypass': True,
         'nocheckcertificate': True,
@@ -47,6 +51,7 @@ def get_ydl_opts():
         'extractor_args': {
             'youtube': {
                 'player_client': ['ios', 'web'],
+                'skip': ['hls', 'dash'],
             }
         },
         
@@ -56,14 +61,33 @@ def get_ydl_opts():
             'preferredquality': '192',
         }],
     }
+    
+    # DEBUG: Print yt-dlp version and check if rustypipe plugin is loaded
+    print(f"🔍 DEBUG: yt-dlp options configured")
+    print(f"🔍 DEBUG: Checking for rustypipe plugin...")
+    
     return opts
 
 async def download_audio(url: str) -> dict:
     """Download audio from YouTube using yt-dlp"""
     ydl_opts = get_ydl_opts()
     
+    print(f"🔍 DEBUG: Starting download for: {url}")
+    print(f"🔍 DEBUG: yt-dlp options: {ydl_opts.get('extractor_args', {})}")
+    
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
+            # Check yt-dlp version and plugins
+            print(f"🔍 DEBUG: yt-dlp version: {yt_dlp.version.__version__}")
+            
+            # Try to check if plugin is loaded
+            try:
+                from yt_dlp_plugins.extractor import rustypipe
+                print("✅ DEBUG: RustyPipe plugin is LOADED!")
+            except ImportError:
+                print("❌ DEBUG: RustyPipe plugin NOT found!")
+                print("❌ This is why po_token is not working!")
+            
             info = await asyncio.to_thread(ydl.extract_info, url, download=True)
             
             if 'entries' in info:
@@ -71,6 +95,8 @@ async def download_audio(url: str) -> dict:
             
             file_path = ydl.prepare_filename(info)
             file_path = os.path.splitext(file_path)[0] + '.mp3'
+            
+            print(f"✅ DEBUG: Download successful: {file_path}")
             
             return {
                 'title': info.get('title', 'Unknown'),
@@ -80,6 +106,7 @@ async def download_audio(url: str) -> dict:
                 'url': url
             }
         except Exception as e:
+            print(f"❌ DEBUG: Download failed with error: {str(e)}")
             raise Exception(f"Download failed: {str(e)}")
 
 def is_youtube_url(url: str) -> bool:
