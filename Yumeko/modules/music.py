@@ -35,7 +35,6 @@ def setup_environment():
     rustypipe_path = os.path.join(base_bin_dir, "rustypipe-botguard")
     if not os.path.exists(rustypipe_path):
         print("⬇️ DEBUG: Downloading Rustypipe...")
-        # This is the Codeberg URL that worked in your logs
         url = "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz"
         try:
             r = requests.get(url, stream=True, timeout=20)
@@ -51,7 +50,7 @@ def setup_environment():
                             with open(rustypipe_path, "wb") as out:
                                 out.write(extracted.read())
                             break
-                os.chmod(rustypipe_path, 0o755) # Make executable
+                os.chmod(rustypipe_path, 0o755)
                 print("✅ DEBUG: Rustypipe Installed.")
             else:
                 print(f"❌ DEBUG: Rustypipe download failed: {r.status_code}")
@@ -61,10 +60,9 @@ def setup_environment():
             if os.path.exists("temp_rp.tar.xz"): os.remove("temp_rp.tar.xz")
 
     # ---------------------------------------------------------
-    # 2. SETUP NODE.JS (The Puzzle Solver - Fixes "No JS runtime")
+    # 2. SETUP NODE.JS (The Puzzle Solver)
     # ---------------------------------------------------------
     node_path = os.path.join(base_bin_dir, "node")
-    # We check if 'node' works. If not, we download it.
     node_working = False
     try:
         if subprocess.run(["node", "-v"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
@@ -73,7 +71,6 @@ def setup_environment():
 
     if not node_working and not os.path.exists(node_path):
         print("⬇️ DEBUG: Downloading Node.js (Required for YouTube)...")
-        # Downloading a standalone Linux binary for Node.js v18 (Stable)
         node_url = "https://nodejs.org/dist/v18.16.0/node-v18.16.0-linux-x64.tar.xz"
         try:
             r = requests.get(node_url, stream=True, timeout=30)
@@ -83,7 +80,6 @@ def setup_environment():
                         f.write(chunk)
                 
                 with tarfile.open("temp_node.tar.xz", "r:xz") as tar:
-                    # Look for bin/node inside the archive
                     for member in tar.getnames():
                         if member.endswith("/bin/node"):
                             extracted = tar.extractfile(member)
@@ -93,7 +89,7 @@ def setup_environment():
                 os.chmod(node_path, 0o755)
                 print("✅ DEBUG: Node.js Installed manually.")
             else:
-                 print(f"❌ DEBUG: Node.js download failed: {r.status_code}")
+                print(f"❌ DEBUG: Node.js download failed: {r.status_code}")
         except Exception as e:
             print(f"❌ DEBUG: Node.js Setup Failed: {e}")
         finally:
@@ -109,7 +105,6 @@ def setup_environment():
     except: pass
     
     try:
-        # We explicitly check the local bin node first
         node_ver = subprocess.getoutput(f"{node_path} --version") if os.path.exists(node_path) else subprocess.getoutput("node --version")
         print(f"   • Node.js:   {node_ver}")
     except: print("   • Node.js:   MISSING")
@@ -149,6 +144,9 @@ DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 def get_ydl_opts():
+    # Get path to our custom Node.js
+    node_path = os.path.join(os.getcwd(), "bin", "node")
+    
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
@@ -174,6 +172,14 @@ def get_ydl_opts():
             'preferredquality': '192',
         }],
     }
+    
+    # 🔥 CRITICAL FIX: Tell yt-dlp where Node.js is located
+    # This fixes "No supported JavaScript runtime could be found"
+    if os.path.exists(node_path):
+        # Correct Python API format for js_runtimes
+        opts['js_runtimes'] = {'node': {'executable': node_path}}
+        print(f"🔧 DEBUG: yt-dlp configured to use Node.js at {node_path}")
+    
     return opts
 
 async def download_audio(url: str) -> dict:
@@ -252,7 +258,7 @@ async def play_command(client, message: Message):
             await status_msg.edit("❌ **No results found!**")
             return
         
-        await status_msg.edit("⏬ **Downloading...**")
+        await status_msg.edit("⬇ **Downloading...**")
         audio_data = await download_audio(url)
         
         song_info = {
