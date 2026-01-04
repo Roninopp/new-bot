@@ -24,15 +24,13 @@ def setup_environment():
     if not os.path.exists(base_bin_dir):
         os.makedirs(base_bin_dir, exist_ok=True)
 
-    # 1. FORCE PATH UPDATE (Put our bin FIRST)
-    # We update os.environ so child processes inherit it
-    current_path = os.environ.get("PATH", "")
-    if base_bin_dir not in current_path:
-        os.environ["PATH"] = base_bin_dir + os.pathsep + current_path
-        print(f"✅ DEBUG: Prepend {base_bin_dir} to PATH")
+    # Add bin to PATH immediately so the rest of the script sees it
+    if base_bin_dir not in os.environ["PATH"]:
+        os.environ["PATH"] = base_bin_dir + os.pathsep + os.environ["PATH"]
+        print(f"✅ DEBUG: Added {base_bin_dir} to PATH")
 
     # ---------------------------------------------------------
-    # 2. SETUP RUSTYPIPE (The Token Generator)
+    # 1. SETUP RUSTYPIPE (The Token Generator)
     # ---------------------------------------------------------
     rustypipe_path = os.path.join(base_bin_dir, "rustypipe-botguard")
     if not os.path.exists(rustypipe_path):
@@ -52,7 +50,7 @@ def setup_environment():
                             with open(rustypipe_path, "wb") as out:
                                 out.write(extracted.read())
                             break
-                os.chmod(rustypipe_path, 0o755) 
+                os.chmod(rustypipe_path, 0o755)
                 print("✅ DEBUG: Rustypipe Installed.")
             else:
                 print(f"❌ DEBUG: Rustypipe download failed: {r.status_code}")
@@ -62,25 +60,19 @@ def setup_environment():
             if os.path.exists("temp_rp.tar.xz"): os.remove("temp_rp.tar.xz")
 
     # ---------------------------------------------------------
-    # 3. SETUP NODE.JS (The Brain - Switched to v16 for Compatibility)
+    # 2. SETUP NODE.JS (The Puzzle Solver)
     # ---------------------------------------------------------
     node_path = os.path.join(base_bin_dir, "node")
-    
-    # Check if node exists and runs
-    node_valid = False
-    if os.path.exists(node_path):
-        try:
-            # Test execution
-            res = subprocess.run([node_path, "--version"], capture_output=True, text=True)
-            if res.returncode == 0:
-                node_valid = True
-                print(f"✅ DEBUG: Found existing Node.js: {res.stdout.strip()}")
-        except:
-            os.remove(node_path)
+    node_working = False
+    try:
+        if subprocess.run(["node", "-v"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+            node_working = True
+            print("✅ DEBUG: System Node.js found")
+    except: pass
 
-    if not node_valid:
-        print("⬇️ DEBUG: Downloading Node.js (v16.20.2)...")
-        # Using v16 because v18+ requires newer glibc than some Heroku stacks provide
+    if not node_working and not os.path.exists(node_path):
+        print("⬇️ DEBUG: Downloading Node.js (Required for YouTube)...")
+        # Downloading v16.20.2 (Proven to work on Heroku)
         node_url = "https://nodejs.org/dist/v16.20.2/node-v16.20.2-linux-x64.tar.xz"
         try:
             r = requests.get(node_url, stream=True, timeout=30)
@@ -90,44 +82,34 @@ def setup_environment():
                         f.write(chunk)
                 
                 with tarfile.open("temp_node.tar.xz", "r:xz") as tar:
-                    # Find bin/node deeply nested
                     for member in tar.getnames():
-                        if member.endswith("/bin/node"): 
+                        if member.endswith("/bin/node"):
                             extracted = tar.extractfile(member)
                             with open(node_path, "wb") as out:
                                 out.write(extracted.read())
                             break
-                
                 os.chmod(node_path, 0o755)
-                
-                # Verify immediately
-                v_check = subprocess.run([node_path, "--version"], capture_output=True, text=True)
-                if v_check.returncode == 0:
-                    print(f"✅ DEBUG: Node.js Installed & Verified: {v_check.stdout.strip()}")
-                else:
-                    print(f"❌ DEBUG: Node.js installed but FAILED to run: {v_check.stderr}")
+                print("✅ DEBUG: Node.js Installed manually.")
             else:
-                 print(f"❌ DEBUG: Node.js download failed: {r.status_code}")
+                print(f"❌ DEBUG: Node.js download failed: {r.status_code}")
         except Exception as e:
             print(f"❌ DEBUG: Node.js Setup Failed: {e}")
         finally:
             if os.path.exists("temp_node.tar.xz"): os.remove("temp_node.tar.xz")
 
     # ---------------------------------------------------------
-    # 4. FINAL VERIFICATION (LOGS WILL SHOW THIS)
+    # 3. VERIFICATION
     # ---------------------------------------------------------
-    print("\n🔍 SYSTEM CHECK (PATH & BINARIES):")
-    print(f"   PATH: {os.environ['PATH']}")
+    print("\n🔍 SYSTEM CHECK:")
     try:
-        # Check through shell to ensure PATH lookup works
-        rp_v = subprocess.getoutput("rustypipe-botguard --version")
-        print(f"   • rustypipe command: {rp_v}")
-    except: print("   • rustypipe command: FAILED")
+        rp_ver = subprocess.getoutput(f"{rustypipe_path} --version") if os.path.exists(rustypipe_path) else "MISSING"
+        print(f"   • Rustypipe: {rp_ver}")
+    except: pass
     
     try:
-        node_v = subprocess.getoutput("node --version")
-        print(f"   • node command:      {node_v}")
-    except: print("   • node command:      FAILED")
+        node_ver = subprocess.getoutput(f"{node_path} --version") if os.path.exists(node_path) else subprocess.getoutput("node --version")
+        print(f"   • Node.js:   {node_ver}")
+    except: print("   • Node.js:   MISSING")
     print("-------------------------------------------\n")
 
 # RUN SETUP NOW
@@ -164,23 +146,35 @@ DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 def get_ydl_opts():
+    # Define paths again for the options
+    node_path = os.path.join(os.getcwd(), "bin", "node")
+    if not os.path.exists(node_path):
+        # Fallback to system node if manually downloaded one is missing
+        node_path = "node"
+
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
         'verbose': True,
         'quiet': False,
-        'no_warnings': True,
+        'no_warnings': False, # Enabled warnings to see if node is used
         'extract_flat': False,
         'geo_bypass': True,
         'nocheckcertificate': True,
         'prefer_ffmpeg': True,
         
-        # 🔧 Force usage of our binaries and ios client
+        # 🔥 THE FIX: Explicitly enable Node.js runtime
+        # We pass the path to the node binary we just downloaded
+        'js_runtimes': [('node', node_path)], 
+        
+        # 🔧 CLIENT CONFIGURATION
         'extractor_args': {
             'youtube': {
+                # We try 'android' first now (it bypasses sign-in better than iOS sometimes)
+                # But kept 'ios' because Rustypipe works with it.
                 'player_client': ['ios', 'android', 'web'],
                 'skip': ['hls', 'dash'],
-                'player_skip': ['js', 'configs', 'web']
+                'player_skip': ['web'] # Removed 'js' from skip list so it downloads the player!
             }
         },
         'postprocessors': [{
@@ -194,6 +188,7 @@ def get_ydl_opts():
 async def download_audio(url: str) -> dict:
     ydl_opts = get_ydl_opts()
     print(f"🔍 DEBUG: Downloading {url}")
+    print(f"🔍 DEBUG: JS Runtimes set to: {ydl_opts.get('js_runtimes')}")
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
