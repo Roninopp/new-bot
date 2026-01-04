@@ -36,10 +36,11 @@ Pyrofork
 TgCrypto
 
 
-# ===== MUSIC BOT REQUIREMENTS (FROM WORKING BOT) =====
+# ===== MUSIC BOT REQUIREMENTS (WITH PO_TOKEN) =====
 ntgcalls==2.0.6
 py-tgcalls==2.2.8
 ffmpeg-python>=0.2.0
 yt-dlp>=2024.8.6
+yt-dlp-get-pot-rustypipe
 youtube-search>=2.1.2
 youtube-search-python>=1.6.6
