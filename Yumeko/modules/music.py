@@ -428,6 +428,10 @@ async def play_command(client, message: Message):
             
             try:
                 # Start the call
+                print(f"🎵 [play_command] Attempting to join VC in chat {message.chat.id}")
+                print(f"🎵 [play_command] File path: {audio_data['file_path']}")
+                print(f"🎵 [play_command] File exists: {os.path.exists(audio_data['file_path'])}")
+                
                 await pytgcalls.play(
                     message.chat.id,
                     MediaStream(
@@ -435,6 +439,8 @@ async def play_command(client, message: Message):
                         audio_parameters=AudioQuality.HIGH
                     )
                 )
+                
+                print(f"✅ [play_command] Successfully joined and started playing!")
                 
                 format_type = "MP3" if FFMPEG_AVAILABLE else "MP4"
                 await status_msg.edit(
@@ -448,7 +454,13 @@ async def play_command(client, message: Message):
                 
             except Exception as e:
                 error_str = str(e)
-                print(f"❌ [play_command] VC JOIN ERROR: {error_str}")
+                print(f"\n❌ [play_command] ========== VC JOIN ERROR ==========")
+                print(f"❌ [play_command] Error type: {type(e).__name__}")
+                print(f"❌ [play_command] Full error: {error_str}")
+                print(f"❌ [play_command] Traceback:")
+                import traceback
+                traceback.print_exc()
+                print(f"❌ [play_command] ========================================\n")
                 
                 # Clear current playing on error
                 if message.chat.id in current_playing:
