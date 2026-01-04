@@ -33,7 +33,7 @@ youtube-search-python
 beautifulsoup4
 Pyrofork
 TgCrypto
-pytgcalls>=1.2.0
+py-tgcalls>=1.2.0
 yt-dlp>=2024.09.27
 yt-dlp-get-pot
 yt-dlp-get-pot-rustypipe
