@@ -417,19 +417,60 @@ async def play_command(client, message: Message):
             'requester': message.from_user.mention
         }
         
+        # Check if already playing in this chat
         if message.chat.id in current_playing:
             add_to_queue(message.chat.id, song_info)
-            await status_msg.edit(f"✅ **Queued:** {audio_data['title']}")
+            position = len(get_queue(message.chat.id))
+            await status_msg.edit(f"✅ **Queued #{position}:** {audio_data['title']}")
         else:
             current_playing[message.chat.id] = song_info
-            await status_msg.edit("🎵 **Joining VC...**")
+            await status_msg.edit("🎵 **Joining voice chat...**")
+            
             try:
-                await pytgcalls.play(message.chat.id, MediaStream(audio_data['file_path'], audio_parameters=AudioQuality.HIGH))
-                format_type = "MP3" if FFMPEG_AVAILABLE else "M4A/WebM"
-                await status_msg.edit(f"▶️ **Playing ({format_type}):** {audio_data['title']}")
+                # Start the call
+                await pytgcalls.play(
+                    message.chat.id,
+                    MediaStream(
+                        audio_data['file_path'],
+                        audio_parameters=AudioQuality.HIGH
+                    )
+                )
+                
+                format_type = "MP3" if FFMPEG_AVAILABLE else "MP4"
+                await status_msg.edit(
+                    f"▶️ **Now Playing ({format_type}):**\n"
+                    f"🎵 {audio_data['title']}\n"
+                    f"👤 Requested by: {message.from_user.mention}"
+                )
+                
+                # Start monitoring the stream
                 asyncio.create_task(monitor_stream(message.chat.id, audio_data['file_path']))
+                
             except Exception as e:
-                await status_msg.edit(f"❌ **Error joining VC:** {str(e)}")
+                error_str = str(e)
+                print(f"❌ [play_command] VC JOIN ERROR: {error_str}")
+                
+                # Clear current playing on error
+                if message.chat.id in current_playing:
+                    del current_playing[message.chat.id]
+                
+                # Provide specific error messages
+                if "USER_ALREADY_PARTICIPANT" in error_str or "CHAT_ADMIN_REQUIRED" in error_str:
+                    await status_msg.edit(
+                        "❌ **Cannot join voice chat!**\n\n"
+                        "Make sure:\n"
+                        "• Userbot is in the group\n"
+                        "• Userbot has permission to join voice chats\n"
+                        "• You started a voice chat in the group"
+                    )
+                elif "No active group call" in error_str or "GROUPCALL_JOIN" in error_str:
+                    await status_msg.edit(
+                        "❌ **No active voice chat!**\n\n"
+                        "Please start a voice chat in this group first."
+                    )
+                else:
+                    await status_msg.edit(f"❌ **Error joining voice chat:**\n`{error_str[:200]}`")
+                
     except Exception as e:
         error_msg = str(e)
         print(f"❌ [play_command] ERROR: {error_msg[:200]}")
@@ -447,7 +488,7 @@ async def play_command(client, message: Message):
             await status_msg.edit(
                 "❌ **FFmpeg Error!**\n\n"
                 "FFmpeg is not properly installed on the server.\n"
-                "Please check your Aptfile and buildpack configuration."
+                "Using direct audio format instead."
             )
         else:
             await status_msg.edit(f"❌ **Error:** {error_msg[:150]}")
