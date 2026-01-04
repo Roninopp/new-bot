@@ -61,6 +61,13 @@ def detect_ffmpeg():
 
 FFMPEG_PATH, FFMPEG_AVAILABLE = detect_ffmpeg()
 
+# If FFmpeg is found, add its directory to PATH
+if FFMPEG_AVAILABLE and FFMPEG_PATH:
+    ffmpeg_dir = os.path.dirname(FFMPEG_PATH)
+    if ffmpeg_dir not in os.environ.get('PATH', ''):
+        os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
+        print(f"✅ Added FFmpeg directory to PATH: {ffmpeg_dir}\n")
+
 # ==========================================
 # 🔍 CRITICAL: COOKIE DIAGNOSTIC SYSTEM
 # ==========================================
@@ -225,8 +232,9 @@ def get_ydl_opts():
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }]
-        # Specify FFmpeg location
-        opts['ffmpeg_location'] = os.path.dirname(FFMPEG_PATH)
+        # Specify FFmpeg location - use the full path to the binary
+        opts['ffmpeg_location'] = FFMPEG_PATH
+        print(f"✅ [get_ydl_opts] Set ffmpeg_location to: {FFMPEG_PATH}")
     else:
         print(f"⚠️ [get_ydl_opts] FFmpeg not available - will use direct audio format")
     
