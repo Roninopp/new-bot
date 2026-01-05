@@ -82,11 +82,6 @@ async def ensure_userbot_in_chat(chat_id: int):
         # Check if userbot is already in chat using bot's perspective
         try:
             await app.get_chat_member(chat_id, userbot_me.id)
-            # Force refresh chat info on userbot side to prevent cache issues
-            try:
-                await userbot.get_chat(chat_id)
-            except:
-                pass
             print(f"✅ [ensure_userbot_in_chat] Already in chat {chat_id}")
             return True
         except:
@@ -157,8 +152,7 @@ async def monitor_stream(chat_id: int, file_path: str, duration: int):
             except Exception as e:
                 print(f"⚠️ [monitor_stream] Delete failed: {e}")
         
-        # Play next song
-        # force_skip=False because this is a natural end
+        # Play next song (natural end)
         await play_next(chat_id, force_skip=False)
         
     except asyncio.CancelledError:
@@ -277,12 +271,20 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
         
     except Exception as e:
         print(f"❌ [play_next] Failed: {e}")
-        # Retry with force cleanup if INVALID_GROUPCALL occurs here
+        
+        # Auto-Refresh Logic for Stale Connections
         if "GROUPCALL_INVALID" in str(e) or "NoActiveGroupCall" in str(e):
              try:
-                 print("🔄 [play_next] Stale connection detected, cleaning up...")
-                 await pytgcalls.leave_call(chat_id)
-                 await asyncio.sleep(1)
+                 print("🔄 [play_next] Stale connection detected. REFRESHING CACHE...")
+                 try:
+                    await pytgcalls.leave_call(chat_id)
+                 except: 
+                    pass
+                 
+                 # IMPORTANT: Force userbot to get chat again to update 'call' info
+                 await userbot.get_chat(chat_id) 
+                 await asyncio.sleep(2)
+                 
                  await pytgcalls.play(
                     chat_id,
                     MediaStream(
@@ -292,10 +294,10 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
                 )
              except Exception as retry_e:
                  print(f"❌ [play_next] Retry failed: {retry_e}")
-                 # Clean up file and try next
                  if os.path.exists(next_song['file_path']):
                     try: os.remove(next_song['file_path'])
                     except: pass
+                 # Recurse to try next song if this one failed
                  await play_next(chat_id, send_message, force_skip=False)
                  return
 
@@ -438,16 +440,22 @@ async def play_command(client, message: Message):
                 print(f"⚠️ [play_command] First attempt failed: {error_str}")
                 
                 if "GROUPCALL_INVALID" in error_str or "NoActiveGroupCall" in error_str or "call" in error_str.lower():
-                    await status_msg.edit("🔄 **Refreshing Voice Chat connection...**")
+                    await status_msg.edit("🔄 **Refetching Voice Chat Info...**")
                     try:
-                        # FORCE LEAVE AND RETRY
+                        # 1. Leave current stale connection
                         try:
                             await pytgcalls.leave_call(message.chat.id)
                         except:
                             pass
                         
-                        await asyncio.sleep(1.5)
+                        # 2. CRITICAL: Force refresh chat info to get NEW call ID
+                        print(f"🔄 [play_command] Refreshing chat cache for {message.chat.id}")
+                        await userbot.get_chat(message.chat.id)
                         
+                        # 3. Wait for propagation
+                        await asyncio.sleep(2)
+                        
+                        # 4. Retry Play
                         await pytgcalls.play(
                             message.chat.id,
                             MediaStream(
@@ -460,7 +468,6 @@ async def play_command(client, message: Message):
                     except Exception as final_e:
                         print(f"❌ [play_command] Retry failed: {final_e}")
                         
-                        # Specific error messaging
                         if "No active" in str(final_e) or "GROUPCALL" in str(final_e):
                              await status_msg.edit(
                                 "❌ **No active voice chat!**\n\n"
@@ -477,7 +484,7 @@ async def play_command(client, message: Message):
                             except: pass
                         return
                 else:
-                    # Other errors
+                    # Other errors (network, ffmpeg, etc)
                     await status_msg.edit(f"❌ **Error:** `{error_str[:150]}`")
                     if message.chat.id in current_playing:
                         del current_playing[message.chat.id]
