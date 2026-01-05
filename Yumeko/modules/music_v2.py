@@ -7,9 +7,8 @@ import asyncio
 import os
 from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from pytgcalls import PyTgCalls, idle
+from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality
-from pytgcalls.exceptions import NoActiveGroupCall
 
 # Import from Part 1
 from Yumeko.modules.music import (
@@ -41,12 +40,49 @@ userbot = Client(
 
 pytgcalls = PyTgCalls(userbot)
 
+# Track monitoring tasks
+monitoring_tasks = {}
+
+# ==========================================
+# 🎵 STREAM MONITOR (Alternative to event handler)
+# ==========================================
+async def monitor_stream(chat_id: int, file_path: str, duration: int):
+    """Monitor stream and auto-play next song when finished"""
+    print(f"🎵 [monitor_stream] Started monitoring chat {chat_id} for {duration}s")
+    
+    try:
+        # Wait for song duration + 2 seconds buffer
+        await asyncio.sleep(duration + 2)
+        
+        print(f"🎵 [monitor_stream] Stream should have ended in {chat_id}")
+        
+        # Clean up current file
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                print(f"🗑️ [monitor_stream] Deleted: {file_path}")
+            except Exception as e:
+                print(f"⚠️ [monitor_stream] Delete failed: {e}")
+        
+        # Play next song
+        await play_next(chat_id)
+        
+    except asyncio.CancelledError:
+        print(f"🎵 [monitor_stream] Monitoring cancelled for {chat_id}")
+    except Exception as e:
+        print(f"❌ [monitor_stream] Error: {e}")
+
 # ==========================================
 # 🎵 PLAYBACK CONTROL
 # ==========================================
 async def play_next(chat_id: int):
     """Play the next song in queue"""
     print(f"🎵 [play_next] Called for chat {chat_id}")
+    
+    # Cancel existing monitoring task if any
+    if chat_id in monitoring_tasks:
+        monitoring_tasks[chat_id].cancel()
+        del monitoring_tasks[chat_id]
     
     queue = get_queue(chat_id)
     
@@ -78,6 +114,13 @@ async def play_next(chat_id: int):
                 audio_parameters=AudioQuality.HIGH
             )
         )
+        
+        # Start monitoring for this song
+        task = asyncio.create_task(
+            monitor_stream(chat_id, next_song['file_path'], next_song.get('duration', 180))
+        )
+        monitoring_tasks[chat_id] = task
+        
     except Exception as e:
         print(f"❌ [play_next] Failed: {e}")
         # Clean up file
@@ -88,28 +131,6 @@ async def play_next(chat_id: int):
                 pass
         # Try next song
         await play_next(chat_id)
-
-# ==========================================
-# 🎵 STREAM END HANDLER - Using decorators module
-# ==========================================
-@pytgcalls.on_stream_end()
-async def handle_stream_end(client, update):
-    """Handle when a stream ends"""
-    chat_id = update.chat_id
-    print(f"🎵 [stream_end] Stream ended in {chat_id}")
-    
-    # Clean up current file
-    if chat_id in current_playing:
-        file_path = current_playing[chat_id]['file_path']
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                print(f"🗑️ [stream_end] Deleted: {file_path}")
-            except Exception as e:
-                print(f"⚠️ [stream_end] Delete failed: {e}")
-    
-    # Play next
-    await play_next(chat_id)
 
 # ==========================================
 # 🎵 COMMANDS
@@ -172,6 +193,7 @@ async def play_command(client, message: Message):
             'title': audio_data['title'],
             'url': url,
             'file_path': audio_data['file_path'],
+            'duration': audio_data['duration'],
             'requester': message.from_user.mention,
             'thumbnail': audio_data.get('thumbnail')
         }
@@ -207,6 +229,12 @@ async def play_command(client, message: Message):
                         audio_parameters=AudioQuality.HIGH
                     )
                 )
+                
+                # Start monitoring for auto-next
+                task = asyncio.create_task(
+                    monitor_stream(message.chat.id, audio_data['file_path'], audio_data['duration'])
+                )
+                monitoring_tasks[message.chat.id] = task
                 
                 print(f"✅ [play_command] Started playing!")
                 
@@ -298,6 +326,11 @@ async def button_handler(client, query: CallbackQuery):
             await query.answer("❌ Nothing playing!", show_alert=True)
     
     elif action == "stop":
+        # Cancel monitoring
+        if chat_id in monitoring_tasks:
+            monitoring_tasks[chat_id].cancel()
+            del monitoring_tasks[chat_id]
+        
         clear_queue(chat_id)
         try:
             await pytgcalls.leave_call(chat_id)
@@ -334,6 +367,11 @@ async def button_handler(client, query: CallbackQuery):
 @app.on_message(filters.command("stop", config.COMMAND_PREFIXES) & filters.group)
 async def stop_command(client, message):
     """Stop playback"""
+    # Cancel monitoring
+    if message.chat.id in monitoring_tasks:
+        monitoring_tasks[message.chat.id].cancel()
+        del monitoring_tasks[message.chat.id]
+    
     clear_queue(message.chat.id)
     try:
         await pytgcalls.leave_call(message.chat.id)
@@ -398,9 +436,10 @@ __help__ = """
 
 **Features:**
 • Auto-converts to MP3 (192kbps)
-• Queue system
+• Queue system with auto-play
 • Interactive controls
-• Auto-cleanup
+• Auto-cleanup after playback
+• Leaves VC after 3s when queue empty
 
 **Note:** Voice chat must be active!
 """
