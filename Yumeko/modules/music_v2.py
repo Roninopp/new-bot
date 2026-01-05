@@ -7,8 +7,9 @@ import asyncio
 import os
 from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from pytgcalls import PyTgCalls
+from pytgcalls import PyTgCalls, idle
 from pytgcalls.types import MediaStream, AudioQuality
+from pytgcalls.exceptions import NoActiveGroupCall
 
 # Import from Part 1
 from Yumeko.modules.music import (
@@ -89,8 +90,9 @@ async def play_next(chat_id: int):
         await play_next(chat_id)
 
 # ==========================================
-# 🎵 STREAM END HANDLER
+# 🎵 STREAM END HANDLER - Using decorators module
 # ==========================================
+@pytgcalls.on_stream_end()
 async def handle_stream_end(client, update):
     """Handle when a stream ends"""
     chat_id = update.chat_id
@@ -108,9 +110,6 @@ async def handle_stream_end(client, update):
     
     # Play next
     await play_next(chat_id)
-
-# Register the stream end handler
-pytgcalls.on_stream_end()(handle_stream_end)
 
 # ==========================================
 # 🎵 COMMANDS
