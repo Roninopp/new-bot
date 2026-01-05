@@ -69,36 +69,62 @@ loop.create_task(start_music_services())
 # ==========================================
 # 🎵 AUTO-JOIN GROUP HELPER
 # ==========================================
-async def ensure_userbot_in_chat(chat_id: int):
+async def ensure_userbot_in_chat(chat_id: int, message: Message = None):
     """Ensure userbot is in the chat, join if not"""
     try:
-        # Check if userbot is already in chat
-        await userbot.get_chat_member(chat_id, (await userbot.get_me()).id)
-        print(f"✅ [ensure_userbot_in_chat] Already in chat {chat_id}")
-        return True
-    except UserNotParticipant:
-        print(f"🔄 [ensure_userbot_in_chat] Not in chat, attempting to join...")
+        # Get userbot info
+        userbot_me = await userbot.get_me()
+        
+        # Check if userbot is already in chat using bot's perspective
         try:
-            # Get invite link
+            member = await app.get_chat_member(chat_id, userbot_me.id)
+            print(f"✅ [ensure_userbot_in_chat] Already in chat {chat_id}")
+            return True
+        except:
+            pass
+        
+        # Not in chat, need to join
+        print(f"🔄 [ensure_userbot_in_chat] Not in chat, attempting to join...")
+        
+        try:
+            # Get chat info using bot
             chat = await app.get_chat(chat_id)
-            if chat.invite_link:
+            
+            # Try using existing invite link
+            if hasattr(chat, 'invite_link') and chat.invite_link:
+                print(f"🔗 [ensure_userbot_in_chat] Using existing invite link")
                 await userbot.join_chat(chat.invite_link)
-            else:
-                # Try to create invite link
+                await asyncio.sleep(2)
+                return True
+            
+            # Create new invite link
+            print(f"🔗 [ensure_userbot_in_chat] Creating new invite link")
+            try:
+                invite_link = await app.create_chat_invite_link(chat_id)
+                await userbot.join_chat(invite_link.invite_link)
+                await asyncio.sleep(2)
+                print(f"✅ [ensure_userbot_in_chat] Successfully joined {chat_id}")
+                return True
+            except:
+                # Fallback: export chat invite link
                 invite_link = await app.export_chat_invite_link(chat_id)
                 await userbot.join_chat(invite_link)
-            
-            print(f"✅ [ensure_userbot_in_chat] Successfully joined {chat_id}")
-            await asyncio.sleep(2)  # Wait for join to complete
-            return True
+                await asyncio.sleep(2)
+                print(f"✅ [ensure_userbot_in_chat] Successfully joined {chat_id}")
+                return True
+                
         except UserAlreadyParticipant:
             print(f"✅ [ensure_userbot_in_chat] Already participant")
             return True
+        except ChatAdminRequired:
+            print(f"❌ [ensure_userbot_in_chat] Bot needs admin rights to invite")
+            return False
         except Exception as e:
             print(f"❌ [ensure_userbot_in_chat] Failed to join: {e}")
             return False
+            
     except Exception as e:
-        print(f"❌ [ensure_userbot_in_chat] Error checking membership: {e}")
+        print(f"❌ [ensure_userbot_in_chat] Error: {e}")
         return False
 
 # ==========================================
@@ -139,7 +165,7 @@ async def monitor_stream(chat_id: int, file_path: str, duration: int):
 # ==========================================
 # 🎵 PLAYBACK CONTROL
 # ==========================================
-async def play_next(chat_id: int):
+async def play_next(chat_id: int, send_message: bool = True):
     """Play the next song in queue"""
     print(f"🎵 [play_next] Called for chat {chat_id}")
     
@@ -152,6 +178,18 @@ async def play_next(chat_id: int):
     
     if not queue:
         print(f"🎵 [play_next] Queue empty, leaving in 3 seconds")
+        
+        # Send leaving message if requested
+        if send_message:
+            try:
+                await app.send_message(
+                    chat_id,
+                    "👋 **Userbot Left The VC**\n\n"
+                    "No songs or queue left. Use `/play` to start again!"
+                )
+            except Exception as e:
+                print(f"⚠️ [play_next] Failed to send leave message: {e}")
+        
         await asyncio.sleep(3)
         
         try:
@@ -186,6 +224,20 @@ async def play_next(chat_id: int):
         monitoring_tasks[chat_id] = task
         print(f"✅ [play_next] Started playing and monitoring")
         
+        # Send now playing message
+        if send_message:
+            try:
+                format_type = "MP3" if FFMPEG_AVAILABLE else "M4A"
+                now_playing = (
+                    f"**▶️ Now Playing ({format_type})**\n\n"
+                    f"🎵 **Title:** {next_song['title']}\n"
+                    f"👤 **Requested by:** {next_song['requester']}\n"
+                    f"⏱️ **Duration:** {next_song['duration'] // 60}:{next_song['duration'] % 60:02d}"
+                )
+                await app.send_message(chat_id, now_playing)
+            except Exception as e:
+                print(f"⚠️ [play_next] Failed to send now playing: {e}")
+        
     except Exception as e:
         print(f"❌ [play_next] Failed: {e}")
         # Clean up file
@@ -195,7 +247,7 @@ async def play_next(chat_id: int):
             except:
                 pass
         # Try next song
-        await play_next(chat_id)
+        await play_next(chat_id, send_message)
 
 # ==========================================
 # 🎵 COMMANDS
@@ -236,10 +288,13 @@ async def play_command(client, message: Message):
             "```"
         )
         
-        if not await ensure_userbot_in_chat(message.chat.id):
+        if not await ensure_userbot_in_chat(message.chat.id, message):
             await status_msg.edit(
                 "❌ **Failed to join chat!**\n\n"
-                "Please add the userbot to this group first."
+                "**Possible reasons:**\n"
+                "• Bot needs admin rights to create invite links\n"
+                "• Group has restricted invite settings\n\n"
+                "**Solution:** Manually add the userbot to this group."
             )
             return
         
@@ -414,7 +469,7 @@ async def button_handler(client, query: CallbackQuery):
     if action == "skip":
         if chat_id in current_playing:
             await query.answer("⏭️ Skipping...", show_alert=False)
-            await play_next(chat_id)
+            await play_next(chat_id, send_message=True)
         else:
             await query.answer("❌ Nothing playing!", show_alert=True)
     
@@ -477,7 +532,7 @@ async def skip_command(client, message):
     """Skip to next song"""
     if message.chat.id in current_playing:
         await message.reply("⏭️ **Skipped!**")
-        await play_next(message.chat.id)
+        await play_next(message.chat.id, send_message=True)
     else:
         await message.reply("❌ **Nothing playing!**")
 
