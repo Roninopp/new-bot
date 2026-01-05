@@ -62,7 +62,6 @@ async def start_music_services():
         print(f"❌ [start_music_services] Failed to start: {e}")
 
 # Start services
-import asyncio
 loop = asyncio.get_event_loop()
 loop.create_task(start_music_services())
 
@@ -77,7 +76,7 @@ async def ensure_userbot_in_chat(chat_id: int, message: Message = None):
         
         # Check if userbot is already in chat using bot's perspective
         try:
-            member = await app.get_chat_member(chat_id, userbot_me.id)
+            await app.get_chat_member(chat_id, userbot_me.id)
             print(f"✅ [ensure_userbot_in_chat] Already in chat {chat_id}")
             return True
         except:
@@ -128,7 +127,7 @@ async def ensure_userbot_in_chat(chat_id: int, message: Message = None):
         return False
 
 # ==========================================
-# 🎵 STREAM MONITOR (Alternative to event handler)
+# 🎵 STREAM MONITOR
 # ==========================================
 async def monitor_stream(chat_id: int, file_path: str, duration: int):
     """Monitor stream and auto-play next song when finished"""
@@ -149,11 +148,13 @@ async def monitor_stream(chat_id: int, file_path: str, duration: int):
                 print(f"⚠️ [monitor_stream] Delete failed: {e}")
         
         # Play next song
-        await play_next(chat_id)
+        # CRITICAL FIX: Do not await play_next directly to prevent task cancellation issues
+        # Pass force_skip=False because this is a natural end, not a user command
+        await play_next(chat_id, force_skip=False)
         
     except asyncio.CancelledError:
         print(f"🎵 [monitor_stream] Monitoring cancelled for {chat_id}")
-        # Clean up on cancel
+        # Clean up on cancel (manual skip/stop)
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
@@ -165,13 +166,21 @@ async def monitor_stream(chat_id: int, file_path: str, duration: int):
 # ==========================================
 # 🎵 PLAYBACK CONTROL
 # ==========================================
-async def play_next(chat_id: int, send_message: bool = True):
+async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = False):
     """Play the next song in queue"""
-    print(f"🎵 [play_next] Called for chat {chat_id}")
+    print(f"🎵 [play_next] Called for chat {chat_id} (Force Skip: {force_skip})")
     
-    # Cancel existing monitoring task if any
-    if chat_id in monitoring_tasks:
-        monitoring_tasks[chat_id].cancel()
+    # CRITICAL FIX: Only cancel the existing task if this is a FORCE SKIP (User action).
+    # If it's natural playback flow, we must NOT cancel the task that called this function,
+    # otherwise the script stops before playing the next song.
+    if force_skip and chat_id in monitoring_tasks:
+        try:
+            monitoring_tasks[chat_id].cancel()
+            del monitoring_tasks[chat_id]
+        except Exception:
+            pass
+    elif chat_id in monitoring_tasks and not force_skip:
+        # Just remove reference, don't cancel because the task is currently running this function
         del monitoring_tasks[chat_id]
     
     queue = get_queue(chat_id)
@@ -228,13 +237,36 @@ async def play_next(chat_id: int, send_message: bool = True):
         if send_message:
             try:
                 format_type = "MP3" if FFMPEG_AVAILABLE else "M4A"
+                
+                buttons = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{chat_id}"),
+                        InlineKeyboardButton("⏭ Skip", callback_data=f"skip_{chat_id}"),
+                        InlineKeyboardButton("⏹ Stop", callback_data=f"stop_{chat_id}")
+                    ],
+                    [
+                        InlineKeyboardButton("📋 Queue", callback_data=f"queue_{chat_id}"),
+                        InlineKeyboardButton("❌ Close", callback_data="close")
+                    ]
+                ])
+
                 now_playing = (
                     f"**▶️ Now Playing ({format_type})**\n\n"
                     f"🎵 **Title:** {next_song['title']}\n"
                     f"👤 **Requested by:** {next_song['requester']}\n"
                     f"⏱️ **Duration:** {next_song['duration'] // 60}:{next_song['duration'] % 60:02d}"
                 )
-                await app.send_message(chat_id, now_playing)
+                
+                if next_song.get('thumbnail'):
+                     await app.send_photo(
+                        chat_id,
+                        photo=next_song['thumbnail'],
+                        caption=now_playing,
+                        reply_markup=buttons
+                    )
+                else:
+                    await app.send_message(chat_id, now_playing, reply_markup=buttons)
+
             except Exception as e:
                 print(f"⚠️ [play_next] Failed to send now playing: {e}")
         
@@ -247,7 +279,7 @@ async def play_next(chat_id: int, send_message: bool = True):
             except:
                 pass
         # Try next song
-        await play_next(chat_id, send_message)
+        await play_next(chat_id, send_message, force_skip=False)
 
 # ==========================================
 # 🎵 COMMANDS
@@ -363,6 +395,11 @@ async def play_command(client, message: Message):
             )
             
             try:
+                # Cancel existing monitoring if re-starting play manually
+                if message.chat.id in monitoring_tasks:
+                    monitoring_tasks[message.chat.id].cancel()
+                    del monitoring_tasks[message.chat.id]
+
                 await pytgcalls.play(
                     message.chat.id,
                     MediaStream(
@@ -469,7 +506,8 @@ async def button_handler(client, query: CallbackQuery):
     if action == "skip":
         if chat_id in current_playing:
             await query.answer("⏭️ Skipping...", show_alert=False)
-            await play_next(chat_id, send_message=True)
+            # Use force_skip=True to indicate manual skip
+            await play_next(chat_id, send_message=True, force_skip=True)
         else:
             await query.answer("❌ Nothing playing!", show_alert=True)
     
@@ -480,6 +518,9 @@ async def button_handler(client, query: CallbackQuery):
             del monitoring_tasks[chat_id]
         
         clear_queue(chat_id)
+        if chat_id in current_playing:
+            del current_playing[chat_id]
+            
         try:
             await pytgcalls.leave_call(chat_id)
         except:
@@ -521,6 +562,9 @@ async def stop_command(client, message):
         del monitoring_tasks[message.chat.id]
     
     clear_queue(message.chat.id)
+    if message.chat.id in current_playing:
+        del current_playing[message.chat.id]
+        
     try:
         await pytgcalls.leave_call(message.chat.id)
     except:
@@ -532,7 +576,8 @@ async def skip_command(client, message):
     """Skip to next song"""
     if message.chat.id in current_playing:
         await message.reply("⏭️ **Skipped!**")
-        await play_next(message.chat.id, send_message=True)
+        # Use force_skip=True for manual command
+        await play_next(message.chat.id, send_message=True, force_skip=True)
     else:
         await message.reply("❌ **Nothing playing!**")
 
