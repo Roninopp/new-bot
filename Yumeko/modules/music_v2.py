@@ -44,6 +44,27 @@ pytgcalls = PyTgCalls(userbot)
 monitoring_tasks = {}
 
 # ==========================================
+# 🎵 START USERBOT & PYTGCALLS
+# ==========================================
+async def start_music_services():
+    """Start userbot and pytgcalls"""
+    try:
+        print("🎵 [start_music_services] Starting userbot...")
+        await userbot.start()
+        print("✅ [start_music_services] Userbot started!")
+        
+        print("🎵 [start_music_services] Starting pytgcalls...")
+        await pytgcalls.start()
+        print("✅ [start_music_services] PyTgCalls started!")
+    except Exception as e:
+        print(f"❌ [start_music_services] Failed to start: {e}")
+
+# Start services
+import asyncio
+loop = asyncio.get_event_loop()
+loop.create_task(start_music_services())
+
+# ==========================================
 # 🎵 STREAM MONITOR (Alternative to event handler)
 # ==========================================
 async def monitor_stream(chat_id: int, file_path: str, duration: int):
