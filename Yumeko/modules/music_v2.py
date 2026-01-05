@@ -8,7 +8,7 @@ import os
 from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream, AudioQuality, StreamEndedError
+from pytgcalls.types import MediaStream, AudioQuality
 
 # Import from Part 1
 from Yumeko.modules.music import (
