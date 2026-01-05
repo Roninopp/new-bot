@@ -1,50 +1,43 @@
+"""
+Music Player Module - Part 1: Core System & Download Logic
+Handles: FFmpeg detection, cookies, download, queue management
+"""
+
 import asyncio
 import os
 import re
 import shutil
 from typing import Optional
-from datetime import datetime
-from pyrogram import filters, Client
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+import yt_dlp
 
 # ==========================================
 # 🔍 CRITICAL: FFMPEG DETECTION SYSTEM
 # ==========================================
 def detect_ffmpeg():
-    """
-    Detect FFmpeg installation and return path
-    """
+    """Detect FFmpeg installation and return path"""
     print("\n" + "="*60)
     print("🔍 FFMPEG DETECTION SYSTEM - STARTING")
     print("="*60)
     
-    # Check common locations
     ffmpeg_locations = [
-        'ffmpeg',  # In PATH
+        'ffmpeg',
         '/usr/bin/ffmpeg',
         '/usr/local/bin/ffmpeg',
-        '/app/.apt/usr/bin/ffmpeg',  # Heroku buildpack location
+        '/app/.apt/usr/bin/ffmpeg',
         '/app/vendor/ffmpeg/ffmpeg',
     ]
     
-    ffmpeg_path = None
-    ffprobe_path = None
+    ffmpeg_path = shutil.which('ffmpeg')
+    ffprobe_path = shutil.which('ffprobe')
     
-    # Method 1: Use shutil.which (checks PATH)
-    ffmpeg_in_path = shutil.which('ffmpeg')
-    ffprobe_in_path = shutil.which('ffprobe')
-    
-    if ffmpeg_in_path and ffprobe_in_path:
-        print(f"✅ FFmpeg found in PATH: {ffmpeg_in_path}")
-        print(f"✅ FFprobe found in PATH: {ffprobe_in_path}")
-        ffmpeg_path = ffmpeg_in_path
+    if ffmpeg_path and ffprobe_path:
+        print(f"✅ FFmpeg found in PATH: {ffmpeg_path}")
+        print(f"✅ FFprobe found in PATH: {ffprobe_path}")
     else:
-        # Method 2: Check specific locations
         print("⚠️ FFmpeg not in PATH, checking specific locations...")
         for path in ffmpeg_locations:
             if os.path.exists(path):
                 ffmpeg_path = path
-                # Check for ffprobe in same directory
                 ffprobe_path = os.path.join(os.path.dirname(path), 'ffprobe')
                 if os.path.exists(ffprobe_path):
                     print(f"✅ FFmpeg found at: {ffmpeg_path}")
@@ -54,34 +47,24 @@ def detect_ffmpeg():
     if not ffmpeg_path:
         print("❌ FFmpeg NOT FOUND!")
         print("⚠️ Will download audio without MP3 conversion")
-        print("="*60)
-        print("🔍 FFMPEG DETECTION SYSTEM - COMPLETE")
         print("="*60 + "\n")
         return None, False
     
-    # Test if ffmpeg actually works
+    # Test if ffmpeg works
     print("\n🧪 Testing FFmpeg executable...")
     import subprocess
     try:
         result = subprocess.run([ffmpeg_path, '-version'], capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
             print(f"✅ FFmpeg works! Output: {result.stdout[:100]}")
-            print("="*60)
-            print("🔍 FFMPEG DETECTION SYSTEM - COMPLETE")
             print("="*60 + "\n")
             return ffmpeg_path, True
         else:
             print(f"❌ FFmpeg test failed with return code: {result.returncode}")
-            print("⚠️ Will use direct audio without conversion")
-            print("="*60)
-            print("🔍 FFMPEG DETECTION SYSTEM - COMPLETE")  
             print("="*60 + "\n")
             return None, False
     except Exception as e:
         print(f"❌ FFmpeg test error: {e}")
-        print("⚠️ Will use direct audio without conversion")
-        print("="*60)
-        print("🔍 FFMPEG DETECTION SYSTEM - COMPLETE")
         print("="*60 + "\n")
         return None, False
 
@@ -91,30 +74,24 @@ FFMPEG_PATH, FFMPEG_AVAILABLE = detect_ffmpeg()
 # 🔍 CRITICAL: COOKIE DIAGNOSTIC SYSTEM
 # ==========================================
 def diagnose_cookies():
-    """
-    Comprehensive cookie file analysis and testing
-    """
-    print("\n" + "="*60)
+    """Comprehensive cookie file analysis"""
+    print("="*60)
     print("🔍 COOKIE DIAGNOSTIC SYSTEM - STARTING")
     print("="*60)
     
-    # 1. Check current directory
     cwd = os.getcwd()
     print(f"📁 Current Working Directory: {cwd}")
     
-    # 2. List files in current directory
     try:
         files = os.listdir('.')
         print(f"📂 Files in root: {[f for f in files if not f.startswith('.')][:20]}")
     except Exception as e:
         print(f"❌ Error listing files: {e}")
     
-    # 3. Search for cookies.txt in multiple locations
     cookie_locations = [
         'cookies.txt',
         './cookies.txt',
         'Yumeko/cookies.txt',
-        '../cookies.txt',
         os.path.join(cwd, 'cookies.txt'),
     ]
     
@@ -128,33 +105,27 @@ def diagnose_cookies():
         
         if exists:
             found_cookie_path = path
-            # Check file size
             size = os.path.getsize(path)
             print(f"   → Size: {size} bytes")
             
-            # Check file readability
             try:
                 with open(path, 'r') as f:
                     first_line = f.readline().strip()
                     print(f"   → First line: {first_line[:50]}...")
                     
-                    # Count cookie entries
                     f.seek(0)
                     lines = f.readlines()
                     cookie_count = sum(1 for line in lines if line.strip() and not line.startswith('#'))
                     print(f"   → Cookie entries: {cookie_count}")
                     
-                    # Check for critical cookies
                     content = ''.join(lines)
                     has_sid = 'SID' in content
                     has_hsid = 'HSID' in content
                     has_ssid = 'SSID' in content
-                    print(f"   → Has SID: {has_sid}")
-                    print(f"   → Has HSID: {has_hsid}")
-                    print(f"   → Has SSID: {has_ssid}")
+                    print(f"   → Has SID: {has_sid}, HSID: {has_hsid}, SSID: {has_ssid}")
                     
                     if cookie_count == 0:
-                        print(f"   ⚠️ WARNING: No valid cookies found!")
+                        print(f"   ⚠️ WARNING: No valid cookies!")
                     elif not (has_sid and has_hsid and has_ssid):
                         print(f"   ⚠️ WARNING: Missing critical YouTube cookies!")
                     else:
@@ -167,74 +138,31 @@ def diagnose_cookies():
         print(f"\n✅ FOUND COOKIE FILE: {found_cookie_path}")
     else:
         print(f"\n❌ NO COOKIE FILE FOUND!")
-        print(f"   Please create 'cookies.txt' in: {cwd}")
     
-    print("="*60)
-    print("🔍 COOKIE DIAGNOSTIC SYSTEM - COMPLETE")
     print("="*60 + "\n")
-    
     return found_cookie_path
 
-# RUN DIAGNOSTICS IMMEDIATELY
 COOKIE_PATH = diagnose_cookies()
 
 # ==========================================
-# 📦 IMPORTS
+# 📦 YT-DLP CONFIGURATION
 # ==========================================
-import yt_dlp
-from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream, AudioQuality
-from pytgcalls.types.stream import StreamAudioEnded
-from Yumeko import app
-from config import config
-from Yumeko.decorator.save import save
-from Yumeko.decorator.errors import error
-
-# ==========================================
-# 🎵 MUSIC CLIENT
-# ==========================================
-
-userbot = Client(
-    "music_userbot",
-    api_id=config.API_ID,
-    api_hash=config.API_HASH,
-    session_string=config.USERBOT_SESSION
-)
-
-pytgcalls = PyTgCalls(userbot)
-
-music_queue = {}
-current_playing = {}
-
 DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 def get_ydl_opts():
+    """Get yt-dlp options with FFmpeg and cookies"""
     print(f"\n🔧 [get_ydl_opts] === STARTING ===")
-    print(f"🔧 [get_ydl_opts] COOKIE_PATH from startup: {COOKIE_PATH}")
+    print(f"🔧 [get_ydl_opts] COOKIE_PATH: {COOKIE_PATH}")
     print(f"🔧 [get_ydl_opts] FFMPEG_AVAILABLE: {FFMPEG_AVAILABLE}")
-    if FFMPEG_PATH:
-        print(f"🔧 [get_ydl_opts] FFMPEG_PATH: {FFMPEG_PATH}")
     
-    # Double-check cookie file exists NOW
-    if COOKIE_PATH and os.path.exists(COOKIE_PATH):
-        cookie_file = COOKIE_PATH
+    cookie_file = COOKIE_PATH if COOKIE_PATH and os.path.exists(COOKIE_PATH) else None
+    if cookie_file:
         print(f"✅ [get_ydl_opts] Using cookies: {cookie_file}")
-        
-        # Verify it's readable
-        try:
-            with open(cookie_file, 'r') as f:
-                line_count = len(f.readlines())
-                print(f"✅ [get_ydl_opts] Cookie file readable, {line_count} lines")
-        except Exception as e:
-            print(f"❌ [get_ydl_opts] Cookie file NOT readable: {e}")
-            cookie_file = None
     else:
-        cookie_file = None
         print(f"❌ [get_ydl_opts] NO COOKIES AVAILABLE!")
     
     opts = {
-        # Simple format selection - prefer m4a audio for best compatibility
         'format': 'bestaudio[ext=m4a]/bestaudio/best',
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
         'quiet': False,
@@ -244,57 +172,47 @@ def get_ydl_opts():
         'nocheckcertificate': True,
     }
     
-    # Only add FFmpeg postprocessor if FFmpeg is available
+    # Add FFmpeg postprocessor if available
     if FFMPEG_AVAILABLE and FFMPEG_PATH:
-        print(f"✅ [get_ydl_opts] Adding FFmpeg postprocessor for MP3 conversion")
+        print(f"✅ [get_ydl_opts] Adding FFmpeg postprocessor for MP3")
         opts['postprocessors'] = [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }]
-        # Specify FFmpeg location - use the full path to the binary
         opts['ffmpeg_location'] = FFMPEG_PATH
-        print(f"✅ [get_ydl_opts] Set ffmpeg_location to: {FFMPEG_PATH}")
     else:
-        print(f"⚠️ [get_ydl_opts] FFmpeg not available - will use direct audio format")
+        print(f"⚠️ [get_ydl_opts] No FFmpeg - using direct audio")
     
-    # Add cookies if available
     if cookie_file:
         opts['cookiefile'] = cookie_file
-        print(f"✅ [get_ydl_opts] Added cookiefile to opts")
-    else:
-        print(f"⚠️ [get_ydl_opts] NO COOKIES - Will likely fail!")
     
-    print(f"🔧 [get_ydl_opts] Final opts keys: {list(opts.keys())}")
     print(f"🔧 [get_ydl_opts] === COMPLETE ===\n")
-    
     return opts
 
 async def download_audio(url: str) -> dict:
+    """Download audio from YouTube"""
     print(f"\n📥 [download_audio] === STARTING ===")
     print(f"📥 [download_audio] URL: {url}")
     
     ydl_opts = get_ydl_opts()
-    print(f"📥 [download_audio] Got ydl_opts, creating YoutubeDL...")
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             print(f"📥 [download_audio] Calling extract_info()...")
             info = await asyncio.to_thread(ydl.extract_info, url, download=True)
             
-            if 'entries' in info: 
+            if 'entries' in info:
                 info = info['entries'][0]
-                print(f"📥 [download_audio] Got playlist entry")
             
             file_path = ydl.prepare_filename(info)
             
-            # If FFmpeg is available, the file will be .mp3
-            # Otherwise, it will be the original format (usually .m4a or .webm)
+            # If FFmpeg available, file will be .mp3
             if FFMPEG_AVAILABLE:
                 file_path = os.path.splitext(file_path)[0] + '.mp3'
                 print(f"✅ [download_audio] Converted to MP3")
             else:
-                print(f"✅ [download_audio] Using direct audio format: {os.path.splitext(file_path)[1]}")
+                print(f"✅ [download_audio] Using direct format: {os.path.splitext(file_path)[1]}")
             
             print(f"✅ [download_audio] SUCCESS! File: {file_path}")
             print(f"✅ [download_audio] Title: {info.get('title', 'Unknown')}")
@@ -310,40 +228,36 @@ async def download_audio(url: str) -> dict:
         except Exception as e:
             error_str = str(e)
             print(f"\n❌ [download_audio] === FAILED ===")
-            print(f"❌ [download_audio] Error type: {type(e).__name__}")
-            print(f"❌ [download_audio] Error message: {error_str[:500]}")
+            print(f"❌ [download_audio] Error: {error_str[:500]}")
             
-            # Analyze the error
-            if "Sign in to confirm" in error_str or "bot" in error_str.lower():
-                print(f"❌ [download_audio] DIAGNOSIS: Cookie authentication failed!")
-                print(f"❌ [download_audio] Either cookies are expired or not being used")
+            if "Sign in" in error_str or "bot" in error_str.lower():
+                print(f"❌ [download_audio] DIAGNOSIS: Cookie auth failed!")
             elif "Signature" in error_str:
                 print(f"❌ [download_audio] DIAGNOSIS: Signature challenge failed!")
             elif "format" in error_str.lower():
                 print(f"❌ [download_audio] DIAGNOSIS: Format selection failed!")
-            elif "ffmpeg" in error_str.lower() or "ffprobe" in error_str.lower():
+            elif "ffmpeg" in error_str.lower():
                 print(f"❌ [download_audio] DIAGNOSIS: FFmpeg error!")
-                print(f"❌ [download_audio] FFmpeg might not be properly installed")
             
             print(f"❌ [download_audio] === END ===\n")
             raise e
 
 def is_youtube_url(url: str) -> bool:
+    """Check if string is a YouTube URL"""
     return bool(re.match(r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/', url))
 
 async def search_youtube(query: str) -> Optional[str]:
+    """Search YouTube and return first result URL"""
     print(f"🔍 [search_youtube] Searching: {query}")
     
     ydl_opts = {
-        'quiet': True, 
-        'no_warnings': True, 
+        'quiet': True,
+        'no_warnings': True,
         'default_search': 'ytsearch'
     }
     
-    # Add cookies if available
     if COOKIE_PATH and os.path.exists(COOKIE_PATH):
         ydl_opts['cookiefile'] = COOKIE_PATH
-        print(f"🔍 [search_youtube] Using cookies for search")
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -353,393 +267,36 @@ async def search_youtube(query: str) -> Optional[str]:
                 print(f"✅ [search_youtube] Found: {url}")
                 return url
         except Exception as e:
-            print(f"❌ [search_youtube] Search failed: {str(e)[:100]}")
+            print(f"❌ [search_youtube] Failed: {str(e)[:100]}")
     
-    print(f"❌ [search_youtube] No results")
     return None
 
+# ==========================================
+# 🎵 QUEUE MANAGEMENT
+# ==========================================
+music_queue = {}
+current_playing = {}
+
 def add_to_queue(chat_id: int, song_data: dict):
-    if chat_id not in music_queue: music_queue[chat_id] = []
+    """Add song to queue"""
+    if chat_id not in music_queue:
+        music_queue[chat_id] = []
     music_queue[chat_id].append(song_data)
 
 def get_queue(chat_id: int) -> list:
+    """Get queue for chat"""
     return music_queue.get(chat_id, [])
 
 def clear_queue(chat_id: int):
-    if chat_id in music_queue: music_queue[chat_id] = []
-    if chat_id in current_playing: del current_playing[chat_id]
-
-async def play_next(chat_id: int):
-    """Play the next song in queue"""
-    print(f"🎵 [play_next] Called for chat {chat_id}")
-    
-    queue = get_queue(chat_id)
-    
-    if not queue:
-        print(f"🎵 [play_next] Queue empty, leaving call in 3 seconds")
-        await asyncio.sleep(3)
-        
-        try:
-            await pytgcalls.leave_call(chat_id)
-            print(f"👋 [play_next] Left voice chat in {chat_id}")
-        except Exception as e:
-            print(f"⚠️ [play_next] Failed to leave call: {e}")
-        
-        if chat_id in current_playing:
-            del current_playing[chat_id]
-        return
-    
-    # Get next song
-    next_song = queue.pop(0)
-    current_playing[chat_id] = next_song
-    
-    print(f"🎵 [play_next] Playing next: {next_song['title']}")
-    
-    try:
-        await pytgcalls.play(
-            chat_id,
-            MediaStream(
-                next_song['file_path'],
-                audio_parameters=AudioQuality.HIGH
-            )
-        )
-        
-    except Exception as e:
-        print(f"❌ [play_next] Failed to play: {e}")
-        # Try next song
-        await play_next(chat_id)
-
-# Event handler for when stream ends
-@pytgcalls.on_stream_end()
-async def on_stream_end(client: PyTgCalls, update: StreamAudioEnded):
-    chat_id = update.chat_id
-    print(f"🎵 [on_stream_end] Stream ended in chat {chat_id}")
-    
-    # Clean up the current file
+    """Clear queue and current playing"""
+    if chat_id in music_queue:
+        music_queue[chat_id] = []
     if chat_id in current_playing:
-        file_path = current_playing[chat_id]['file_path']
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                print(f"🗑️ [on_stream_end] Deleted file: {file_path}")
-            except Exception as e:
-                print(f"⚠️ [on_stream_end] Failed to delete file: {e}")
-    
-    # Play next song
-    await play_next(chat_id)
-
-@app.on_message(filters.command("play", config.COMMAND_PREFIXES) & filters.group)
-@error
-@save
-async def play_command(client, message: Message):
-    print(f"\n🎵 [play_command] ========== COMMAND RECEIVED ==========")
-    print(f"🎵 [play_command] Chat: {message.chat.id}")
-    print(f"🎵 [play_command] User: {message.from_user.id}")
-    
-    if len(message.command) < 2:
-        await message.reply("**Usage:** `/play <song name or URL>`")
-        return
-    
-    query = message.text.split(maxsplit=1)[1]
-    print(f"🎵 [play_command] Query: {query}")
-    
-    status_msg = await message.reply(
-        "```\n"
-        "[░░░░░░░░░░] 0%\n"
-        "⏳ Initializing...\n"
-        "```"
-    )
-    
-    try:
-        # Search phase
-        await status_msg.edit(
-            "```\n"
-            "[██░░░░░░░░] 20%\n"
-            "🔍 Searching YouTube...\n"
-            "```"
-        )
-        
-        url = query if is_youtube_url(query) else await search_youtube(query)
-        if not url:
-            await status_msg.edit("❌ **No results found!**")
-            return
-        
-        print(f"🎵 [play_command] URL: {url}")
-        
-        # Download phase
-        await status_msg.edit(
-            "```\n"
-            "[████░░░░░░] 40%\n"
-            "⬇️ Downloading audio from YouTube...\n"
-            f"📡 Source: {url[:50]}...\n"
-            "```"
-        )
-        
-        audio_data = await download_audio(url)
-        
-        # Processing phase
-        await status_msg.edit(
-            "```\n"
-            "[███████░░░] 70%\n"
-            f"🎵 Processing: {audio_data['title'][:30]}...\n"
-            f"{'🎛️ Format: MP3 (192kbps)' if FFMPEG_AVAILABLE else '🎛️ Format: M4A'}\n"
-            "```"
-        )
-        
-        song_info = {
-            'title': audio_data['title'],
-            'url': url,
-            'file_path': audio_data['file_path'],
-            'requester': message.from_user.mention,
-            'thumbnail': audio_data.get('thumbnail')
-        }
-        
-        # Check if already playing in this chat
-        if message.chat.id in current_playing:
-            add_to_queue(message.chat.id, song_info)
-            position = len(get_queue(message.chat.id))
-            
-            await status_msg.edit(
-                "```\n"
-                "[██████████] 100%\n"
-                "✅ Added to queue\n"
-                "```"
-            )
-            
-            # Send queue position message
-            queue_msg = (
-                f"**✅ Queued at #{position}**\n\n"
-                f"🎵 **Title:** {audio_data['title']}\n"
-                f"👤 **Requested by:** {message.from_user.mention}\n"
-                f"⏱️ **Duration:** {audio_data['duration'] // 60}:{audio_data['duration'] % 60:02d}"
-            )
-            await status_msg.edit(queue_msg)
-        else:
-            current_playing[message.chat.id] = song_info
-            
-            # Joining phase
-            await status_msg.edit(
-                "```\n"
-                "[█████████░] 90%\n"
-                "🎙️ Connecting to voice chat...\n"
-                "```"
-            )
-            
-            try:
-                await pytgcalls.play(
-                    message.chat.id,
-                    MediaStream(
-                        audio_data['file_path'],
-                        audio_parameters=AudioQuality.HIGH
-                    )
-                )
-                
-                print(f"✅ [play_command] Successfully joined and started playing!")
-                
-                # Complete - now playing
-                format_type = "MP3" if FFMPEG_AVAILABLE else "M4A"
-                buttons = InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{message.chat.id}"),
-                        InlineKeyboardButton("⏭ Skip", callback_data=f"skip_{message.chat.id}"),
-                        InlineKeyboardButton("⏹ Stop", callback_data=f"stop_{message.chat.id}")
-                    ],
-                    [
-                        InlineKeyboardButton("📋 Queue", callback_data=f"queue_{message.chat.id}"),
-                        InlineKeyboardButton("❌ Close", callback_data="close")
-                    ]
-                ])
-                
-                now_playing_text = (
-                    f"**▶️ Now Playing ({format_type})**\n\n"
-                    f"🎵 **Title:** {audio_data['title']}\n"
-                    f"👤 **Requested by:** {message.from_user.mention}\n"
-                    f"⏱️ **Duration:** {audio_data['duration'] // 60}:{audio_data['duration'] % 60:02d}"
-                )
-                
-                if audio_data.get('thumbnail'):
-                    try:
-                        await status_msg.delete()
-                        await message.reply_photo(
-                            audio_data['thumbnail'],
-                            caption=now_playing_text,
-                            reply_markup=buttons
-                        )
-                    except:
-                        await status_msg.edit(now_playing_text, reply_markup=buttons)
-                else:
-                    await status_msg.edit(now_playing_text, reply_markup=buttons)
-                
-            except Exception as e:
-                error_str = str(e)
-                print(f"\n❌ [play_command] ========== VC JOIN ERROR ==========")
-                print(f"❌ [play_command] Error type: {type(e).__name__}")
-                print(f"❌ [play_command] Full error: {error_str}")
-                print(f"❌ [play_command] ========================================\n")
-                
-                # Clear current playing on error
-                if message.chat.id in current_playing:
-                    del current_playing[message.chat.id]
-                
-                # Provide specific error messages
-                if "USER_ALREADY_PARTICIPANT" in error_str or "CHAT_ADMIN_REQUIRED" in error_str:
-                    await status_msg.edit(
-                        "❌ **Cannot join voice chat!**\n\n"
-                        "Make sure:\n"
-                        "• Userbot is in the group\n"
-                        "• Userbot has permission to join voice chats\n"
-                        "• You started a voice chat in the group"
-                    )
-                elif "No active group call" in error_str or "GROUPCALL_JOIN" in error_str or "GROUPCALL_INVALID" in error_str:
-                    await status_msg.edit(
-                        "❌ **No active voice chat!**\n\n"
-                        "Please start a voice chat in this group first."
-                    )
-                else:
-                    await status_msg.edit(f"❌ **Error joining voice chat:**\n`{error_str[:200]}`")
-                
-    except Exception as e:
-        error_msg = str(e)
-        print(f"❌ [play_command] ERROR: {error_msg[:200]}")
-        
-        if "Sign in to confirm" in error_msg or "bot" in error_msg.lower():
-            await status_msg.edit(
-                "❌ **Cookie Authentication Failed!**\n\n"
-                "Your cookies are either:\n"
-                "• Expired\n"
-                "• Invalid\n"
-                "• Not found\n\n"
-                "Check bot logs for cookie diagnostic info."
-            )
-        elif "ffmpeg" in error_msg.lower() or "ffprobe" in error_msg.lower():
-            await status_msg.edit(
-                "❌ **FFmpeg Error!**\n\n"
-                "FFmpeg is not properly installed on the server.\n"
-                "Using direct audio format instead."
-            )
-        else:
-            await status_msg.edit(f"❌ **Error:** {error_msg[:150]}")
-
-# Callback query handler for buttons
-@app.on_callback_query(filters.regex(r"^(pause|skip|stop|queue|close)"))
-async def handle_buttons(client, query: CallbackQuery):
-    action = query.data.split("_")[0]
-    
-    if action == "close":
-        await query.message.delete()
-        return
-    
-    chat_id = int(query.data.split("_")[1])
-    
-    if action == "skip":
-        if chat_id in current_playing:
-            await query.answer("⏭️ Skipping...", show_alert=False)
-            await play_next(chat_id)
-        else:
-            await query.answer("❌ Nothing is playing!", show_alert=True)
-    
-    elif action == "stop":
-        clear_queue(chat_id)
-        try:
-            await pytgcalls.leave_call(chat_id)
-        except:
-            pass
-        await query.answer("⏹️ Stopped and cleared queue", show_alert=False)
-        await query.message.edit_caption("⏹️ **Playback stopped**")
-    
-    elif action == "queue":
-        queue = get_queue(chat_id)
-        if not queue and chat_id not in current_playing:
-            await query.answer("📭 Queue is empty!", show_alert=True)
-            return
-        
-        text = "🎵 **Current Queue:**\n\n"
-        if chat_id in current_playing:
-            text += f"▶️ **Now:** {current_playing[chat_id]['title'][:50]}\n\n"
-        
-        for i, song in enumerate(queue, 1):
-            text += f"{i}. {song['title'][:50]}\n"
-        
-        await query.answer(text[:200], show_alert=True)
-
-@app.on_message(filters.command("stop", config.COMMAND_PREFIXES) & filters.group)
-async def stop_command(client, message):
-    clear_queue(message.chat.id)
-    try: 
-        await pytgcalls.leave_call(message.chat.id)
-    except: 
-        pass
-    await message.reply("⏹️ **Stopped.**")
-
-@app.on_message(filters.command("skip", config.COMMAND_PREFIXES) & filters.group)
-async def skip_command(client, message):
-    if message.chat.id in current_playing:
-        await message.reply("⏭️ **Skipped!**")
-        await play_next(message.chat.id)
-    else:
-        await message.reply("❌ **Nothing is playing!**")
-
-@app.on_message(filters.command("queue", config.COMMAND_PREFIXES) & filters.group)
-async def queue_command(client, message):
-    queue = get_queue(message.chat.id)
-    if not queue and message.chat.id not in current_playing:
-        await message.reply("📭 **Queue is empty!**")
-        return
-    
-    text = "🎵 **Current Queue:**\n\n"
-    if message.chat.id in current_playing:
-        text += f"▶️ **Now:** {current_playing[message.chat.id]['title']}\n\n"
-    
-    for i, song in enumerate(queue, 1):
-        text += f"{i}. {song['title']}\n"
-    
-    await message.reply(text)
-
-@app.on_message(filters.command("pause", config.COMMAND_PREFIXES) & filters.group)
-async def pause_command(client, message):
-    try:
-        await pytgcalls.pause_stream(message.chat.id)
-        await message.reply("⏸️ **Paused**")
-    except Exception as e:
-        await message.reply(f"❌ **Error:** {str(e)[:100]}")
-
-@app.on_message(filters.command("resume", config.COMMAND_PREFIXES) & filters.group)
-async def resume_command(client, message):
-    try:
-        await pytgcalls.resume_stream(message.chat.id)
-        await message.reply("▶️ **Resumed**")
-    except Exception as e:
-        await message.reply(f"❌ **Error:** {str(e)[:100]}")
-
-__module__ = "Music"
-__help__ = """
-**🎵 Music Player Commands:**
-
-• `/play <song>` - Play a song (name or YouTube URL)
-• `/pause` - Pause current song
-• `/resume` - Resume playback
-• `/skip` - Skip to next song
-• `/stop` - Stop playing and clear queue
-• `/queue` - Show current queue
-
-**Audio Quality:**
-• With FFmpeg: MP3 (192kbps) ✅
-• Without FFmpeg: M4A (direct)
-
-**Features:**
-• Auto-converts to MP3 format
-• Queue system with unlimited songs
-• Interactive player controls
-• Thumbnail display
-• Progress indicators
-• Auto-cleanup when queue ends
-
-**Note:** Userbot must be in the group and voice chat must be active!
-"""
+        del current_playing[chat_id]
 
 print(f"\n{'='*60}")
-print(f"✅ MUSIC MODULE LOADED")
-print(f"🍪 Cookies: {'✅ Available' if COOKIE_PATH else '❌ Not Found'}")
+print(f"✅ MUSIC MODULE CORE LOADED")
+print(f"🪙 Cookies: {'✅ Available' if COOKIE_PATH else '❌ Not Found'}")
 print(f"🎬 FFmpeg: {'✅ Available' if FFMPEG_AVAILABLE else '❌ Not Available'}")
 if FFMPEG_PATH:
     print(f"📍 FFmpeg: {FFMPEG_PATH}")
