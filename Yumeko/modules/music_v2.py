@@ -1,4 +1,4 @@
-"""
+ """
 Music Player Module - Part 2: PyTgCalls Integration & Commands
 Handles: Voice chat playback, commands, button callbacks
 """
@@ -7,7 +7,12 @@ import asyncio
 import os
 from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from pyrogram.errors import UserAlreadyParticipant, ChatAdminRequired, UserNotParticipant
+from pyrogram.errors import (
+    UserAlreadyParticipant, 
+    ChatAdminRequired, 
+    UserNotParticipant, 
+    RPCError
+)
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality
 from pytgcalls.exceptions import NoActiveGroupCall
@@ -68,7 +73,7 @@ loop.create_task(start_music_services())
 # ==========================================
 # 🎵 AUTO-JOIN GROUP HELPER
 # ==========================================
-async def ensure_userbot_in_chat(chat_id: int, message: Message = None):
+async def ensure_userbot_in_chat(chat_id: int):
     """Ensure userbot is in the chat, join if not"""
     try:
         # Get userbot info
@@ -77,6 +82,11 @@ async def ensure_userbot_in_chat(chat_id: int, message: Message = None):
         # Check if userbot is already in chat using bot's perspective
         try:
             await app.get_chat_member(chat_id, userbot_me.id)
+            # Force refresh chat info on userbot side to prevent cache issues
+            try:
+                await userbot.get_chat(chat_id)
+            except:
+                pass
             print(f"✅ [ensure_userbot_in_chat] Already in chat {chat_id}")
             return True
         except:
@@ -148,8 +158,7 @@ async def monitor_stream(chat_id: int, file_path: str, duration: int):
                 print(f"⚠️ [monitor_stream] Delete failed: {e}")
         
         # Play next song
-        # CRITICAL FIX: Do not await play_next directly to prevent task cancellation issues
-        # Pass force_skip=False because this is a natural end, not a user command
+        # force_skip=False because this is a natural end
         await play_next(chat_id, force_skip=False)
         
     except asyncio.CancelledError:
@@ -170,9 +179,7 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
     """Play the next song in queue"""
     print(f"🎵 [play_next] Called for chat {chat_id} (Force Skip: {force_skip})")
     
-    # CRITICAL FIX: Only cancel the existing task if this is a FORCE SKIP (User action).
-    # If it's natural playback flow, we must NOT cancel the task that called this function,
-    # otherwise the script stops before playing the next song.
+    # Manage tasks
     if force_skip and chat_id in monitoring_tasks:
         try:
             monitoring_tasks[chat_id].cancel()
@@ -180,7 +187,6 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
         except Exception:
             pass
     elif chat_id in monitoring_tasks and not force_skip:
-        # Just remove reference, don't cancel because the task is currently running this function
         del monitoring_tasks[chat_id]
     
     queue = get_queue(chat_id)
@@ -188,7 +194,6 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
     if not queue:
         print(f"🎵 [play_next] Queue empty, leaving in 3 seconds")
         
-        # Send leaving message if requested
         if send_message:
             try:
                 await app.send_message(
@@ -272,13 +277,32 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
         
     except Exception as e:
         print(f"❌ [play_next] Failed: {e}")
-        # Clean up file
+        # Retry with force cleanup if INVALID_GROUPCALL occurs here
+        if "GROUPCALL_INVALID" in str(e) or "NoActiveGroupCall" in str(e):
+             try:
+                 print("🔄 [play_next] Stale connection detected, cleaning up...")
+                 await pytgcalls.leave_call(chat_id)
+                 await asyncio.sleep(1)
+                 await pytgcalls.play(
+                    chat_id,
+                    MediaStream(
+                        next_song['file_path'],
+                        audio_parameters=AudioQuality.HIGH
+                    )
+                )
+             except Exception as retry_e:
+                 print(f"❌ [play_next] Retry failed: {retry_e}")
+                 # Clean up file and try next
+                 if os.path.exists(next_song['file_path']):
+                    try: os.remove(next_song['file_path'])
+                    except: pass
+                 await play_next(chat_id, send_message, force_skip=False)
+                 return
+
+        # General error fallback
         if os.path.exists(next_song['file_path']):
-            try:
-                os.remove(next_song['file_path'])
-            except:
-                pass
-        # Try next song
+            try: os.remove(next_song['file_path'])
+            except: pass
         await play_next(chat_id, send_message, force_skip=False)
 
 # ==========================================
@@ -298,11 +322,6 @@ async def play_command(client, message: Message):
         return
     
     query = message.text.split(maxsplit=1)[1].strip()
-    if not query:
-        await message.reply("**Usage:** `/play <song name or URL>`\n\n**Example:** `/play Believer`")
-        return
-    
-    print(f"🎵 [play_command] Query: {query}")
     
     status_msg = await message.reply(
         "```\n"
@@ -320,7 +339,7 @@ async def play_command(client, message: Message):
             "```"
         )
         
-        if not await ensure_userbot_in_chat(message.chat.id, message):
+        if not await ensure_userbot_in_chat(message.chat.id):
             await status_msg.edit(
                 "❌ **Failed to join chat!**\n\n"
                 "**Possible reasons:**\n"
@@ -394,12 +413,16 @@ async def play_command(client, message: Message):
                 "```"
             )
             
-            try:
-                # Cancel existing monitoring if re-starting play manually
-                if message.chat.id in monitoring_tasks:
-                    monitoring_tasks[message.chat.id].cancel()
-                    del monitoring_tasks[message.chat.id]
+            # --- START CONNECTION LOGIC ---
+            connection_success = False
+            
+            # Cleanup previous monitoring
+            if message.chat.id in monitoring_tasks:
+                monitoring_tasks[message.chat.id].cancel()
+                del monitoring_tasks[message.chat.id]
 
+            try:
+                # First Attempt
                 await pytgcalls.play(
                     message.chat.id,
                     MediaStream(
@@ -407,7 +430,60 @@ async def play_command(client, message: Message):
                         audio_parameters=AudioQuality.HIGH
                     )
                 )
+                connection_success = True
                 
+            except Exception as e:
+                # Handle GROUPCALL_INVALID or NoActiveGroupCall
+                error_str = str(e)
+                print(f"⚠️ [play_command] First attempt failed: {error_str}")
+                
+                if "GROUPCALL_INVALID" in error_str or "NoActiveGroupCall" in error_str or "call" in error_str.lower():
+                    await status_msg.edit("🔄 **Refreshing Voice Chat connection...**")
+                    try:
+                        # FORCE LEAVE AND RETRY
+                        try:
+                            await pytgcalls.leave_call(message.chat.id)
+                        except:
+                            pass
+                        
+                        await asyncio.sleep(1.5)
+                        
+                        await pytgcalls.play(
+                            message.chat.id,
+                            MediaStream(
+                                audio_data['file_path'],
+                                audio_parameters=AudioQuality.HIGH
+                            )
+                        )
+                        connection_success = True
+                        print("✅ [play_command] Retry successful!")
+                    except Exception as final_e:
+                        print(f"❌ [play_command] Retry failed: {final_e}")
+                        
+                        # Specific error messaging
+                        if "No active" in str(final_e) or "GROUPCALL" in str(final_e):
+                             await status_msg.edit(
+                                "❌ **No active voice chat!**\n\n"
+                                "Please ensure the voice chat is turned ON and someone is in it."
+                            )
+                        else:
+                             await status_msg.edit(f"❌ **Error:** `{str(final_e)[:100]}`")
+                        
+                        # Cleanup
+                        if message.chat.id in current_playing:
+                            del current_playing[message.chat.id]
+                        if os.path.exists(audio_data['file_path']):
+                            try: os.remove(audio_data['file_path'])
+                            except: pass
+                        return
+                else:
+                    # Other errors
+                    await status_msg.edit(f"❌ **Error:** `{error_str[:150]}`")
+                    if message.chat.id in current_playing:
+                        del current_playing[message.chat.id]
+                    return
+
+            if connection_success:
                 # Start monitoring for auto-next
                 task = asyncio.create_task(
                     monitor_stream(message.chat.id, audio_data['file_path'], audio_data['duration'])
@@ -450,46 +526,10 @@ async def play_command(client, message: Message):
                 else:
                     await status_msg.edit(now_playing, reply_markup=buttons)
                 
-            except NoActiveGroupCall:
-                await status_msg.edit(
-                    "❌ **No active voice chat!**\n\n"
-                    "Please start a voice chat first."
-                )
-                if message.chat.id in current_playing:
-                    del current_playing[message.chat.id]
-            except Exception as e:
-                error_str = str(e)
-                print(f"❌ [play_command] VC join error: {error_str}")
-                
-                if message.chat.id in current_playing:
-                    del current_playing[message.chat.id]
-                
-                if "No active" in error_str or "GROUPCALL" in error_str:
-                    await status_msg.edit(
-                        "❌ **No active voice chat!**\n\n"
-                        "Please start a voice chat first."
-                    )
-                elif "ADMIN_REQUIRED" in error_str or "privilege" in error_str.lower():
-                    await status_msg.edit(
-                        "❌ **Permission error!**\n\n"
-                        "Make sure userbot can join voice chats."
-                    )
-                else:
-                    await status_msg.edit(f"❌ **Error:** `{error_str[:150]}`")
-                
     except Exception as e:
         error_msg = str(e)
-        print(f"❌ [play_command] Error: {error_msg[:200]}")
-        
-        if "Sign in" in error_msg or "bot" in error_msg.lower():
-            await status_msg.edit(
-                "❌ **Cookie Authentication Failed!**\n\n"
-                "Cookies are expired or invalid."
-            )
-        elif "ffmpeg" in error_msg.lower():
-            await status_msg.edit("❌ **FFmpeg Error!**")
-        else:
-            await status_msg.edit(f"❌ **Error:** `{error_msg[:150]}`")
+        print(f"❌ [play_command] Critical Error: {error_msg[:200]}")
+        await status_msg.edit(f"❌ **Critical Error:** `{error_msg[:100]}`")
 
 # Button handlers
 @app.on_callback_query(filters.regex(r"^(pause|skip|stop|queue|close)"))
@@ -506,7 +546,6 @@ async def button_handler(client, query: CallbackQuery):
     if action == "skip":
         if chat_id in current_playing:
             await query.answer("⏭️ Skipping...", show_alert=False)
-            # Use force_skip=True to indicate manual skip
             await play_next(chat_id, send_message=True, force_skip=True)
         else:
             await query.answer("❌ Nothing playing!", show_alert=True)
@@ -576,7 +615,6 @@ async def skip_command(client, message):
     """Skip to next song"""
     if message.chat.id in current_playing:
         await message.reply("⏭️ **Skipped!**")
-        # Use force_skip=True for manual command
         await play_next(message.chat.id, send_message=True, force_skip=True)
     else:
         await message.reply("❌ **Nothing playing!**")
@@ -634,6 +672,7 @@ __help__ = """
 • Auto-cleanup after playback
 • Leaves VC after 3s when queue empty
 • Auto-joins new groups
+• **Auto-Fix** for "No Active Call" errors
 
 **Note:** Voice chat must be active!
 """
