@@ -1,4 +1,4 @@
- """
+"""
 Music Player Module - Part 2: PyTgCalls Integration & Commands
 Handles: Voice chat playback, commands, button callbacks
 """
