@@ -5,6 +5,7 @@ Handles: Voice chat playback, commands, button callbacks
 
 import asyncio
 import os
+import functools
 from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.errors import (
@@ -16,11 +17,11 @@ from pyrogram.errors import (
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality
 from pytgcalls.exceptions import NoActiveGroupCall
+from yt_dlp import YoutubeDL
 
-# Import from Part 1
+# Import from Part 1 (Only keeping necessary imports)
 from Yumeko.modules.music import (
     FFMPEG_AVAILABLE,
-    download_audio,
     search_youtube,
     is_youtube_url,
     add_to_queue,
@@ -49,6 +50,33 @@ pytgcalls = PyTgCalls(userbot)
 
 # Track monitoring tasks
 monitoring_tasks = {}
+
+# ==========================================
+# 🎵 DIRECT STREAM HELPER (SPEED BOOST)
+# ==========================================
+def get_stream_sync(url):
+    """Extract direct stream URL using yt-dlp (Sync)"""
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'quiet': True,
+        'no_warnings': True,
+        'cookiefile': '/app/cookies.txt', # Using path from your logs
+        'source_address': '0.0.0.0',
+    }
+    
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        return {
+            'url': info['url'], # Direct Stream URL
+            'title': info.get('title', 'Unknown'),
+            'duration': info.get('duration', 0),
+            'thumbnail': info.get('thumbnail')
+        }
+
+async def get_stream_data(url):
+    """Async wrapper for extraction"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, functools.partial(get_stream_sync, url))
 
 # ==========================================
 # 🎵 START USERBOT & PYTGCALLS
@@ -134,35 +162,21 @@ async def ensure_userbot_in_chat(chat_id: int):
 # ==========================================
 # 🎵 STREAM MONITOR
 # ==========================================
-async def monitor_stream(chat_id: int, file_path: str, duration: int):
+async def monitor_stream(chat_id: int, duration: int):
     """Monitor stream and auto-play next song when finished"""
     print(f"🎵 [monitor_stream] Started monitoring chat {chat_id} for {duration}s")
     
     try:
-        # Wait for song duration + 2 seconds buffer
-        await asyncio.sleep(duration + 2)
+        # Wait for song duration + 4 seconds buffer (extra buffer for stream latency)
+        await asyncio.sleep(duration + 4)
         
         print(f"🎵 [monitor_stream] Stream ended in {chat_id}")
-        
-        # Clean up current file
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                print(f"🗑️ [monitor_stream] Deleted: {file_path}")
-            except Exception as e:
-                print(f"⚠️ [monitor_stream] Delete failed: {e}")
         
         # Play next song (natural end)
         await play_next(chat_id, force_skip=False)
         
     except asyncio.CancelledError:
         print(f"🎵 [monitor_stream] Monitoring cancelled for {chat_id}")
-        # Clean up on cancel (manual skip/stop)
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except:
-                pass
     except Exception as e:
         print(f"❌ [monitor_stream] Error: {e}")
 
@@ -211,23 +225,38 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
         return
     
     # Get next song
-    next_song = queue.pop(0)
-    current_playing[chat_id] = next_song
+    next_song_info = queue.pop(0)
     
-    print(f"🎵 [play_next] Playing: {next_song['title']}")
+    # JIT Extraction (Just-In-Time) for Next Song
+    # We do this here to prevent links expiring while in queue
+    print(f"🎵 [play_next] Extracting fresh link for: {next_song_info['title']}")
+    try:
+        stream_data = await get_stream_data(next_song_info['original_url'])
+        # Update metadata with fresh link
+        next_song_info['stream_url'] = stream_data['url']
+        next_song_info['duration'] = stream_data['duration']
+    except Exception as e:
+        print(f"❌ [play_next] Extraction failed: {e}")
+        if send_message:
+            try: await app.send_message(chat_id, f"❌ Failed to play **{next_song_info['title']}**. Skipped.")
+            except: pass
+        await play_next(chat_id, send_message, force_skip=False)
+        return
+
+    current_playing[chat_id] = next_song_info
     
     try:
         await pytgcalls.play(
             chat_id,
             MediaStream(
-                next_song['file_path'],
+                next_song_info['stream_url'],
                 audio_parameters=AudioQuality.HIGH
             )
         )
         
         # Start monitoring for this song
         task = asyncio.create_task(
-            monitor_stream(chat_id, next_song['file_path'], next_song.get('duration', 180))
+            monitor_stream(chat_id, next_song_info.get('duration', 180))
         )
         monitoring_tasks[chat_id] = task
         print(f"✅ [play_next] Started playing and monitoring")
@@ -235,7 +264,7 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
         # Send now playing message
         if send_message:
             try:
-                format_type = "MP3" if FFMPEG_AVAILABLE else "M4A"
+                format_type = "Stream"
                 
                 buttons = InlineKeyboardMarkup([
                     [
@@ -250,16 +279,16 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
                 ])
 
                 now_playing = (
-                    f"**▶️ Now Playing ({format_type})**\n\n"
-                    f"🎵 **Title:** {next_song['title']}\n"
-                    f"👤 **Requested by:** {next_song['requester']}\n"
-                    f"⏱️ **Duration:** {next_song['duration'] // 60}:{next_song['duration'] % 60:02d}"
+                    f"**▶️ Now Playing (Direct)**\n\n"
+                    f"🎵 **Title:** {next_song_info['title']}\n"
+                    f"👤 **Requested by:** {next_song_info['requester']}\n"
+                    f"⏱️ **Duration:** {next_song_info['duration'] // 60}:{next_song_info['duration'] % 60:02d}"
                 )
                 
-                if next_song.get('thumbnail'):
+                if next_song_info.get('thumbnail'):
                      await app.send_photo(
                         chat_id,
-                        photo=next_song['thumbnail'],
+                        photo=next_song_info['thumbnail'],
                         caption=now_playing,
                         reply_markup=buttons
                     )
@@ -288,23 +317,16 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
                  await pytgcalls.play(
                     chat_id,
                     MediaStream(
-                        next_song['file_path'],
+                        next_song_info['stream_url'],
                         audio_parameters=AudioQuality.HIGH
                     )
                 )
              except Exception as retry_e:
                  print(f"❌ [play_next] Retry failed: {retry_e}")
-                 if os.path.exists(next_song['file_path']):
-                    try: os.remove(next_song['file_path'])
-                    except: pass
                  # Recurse to try next song if this one failed
                  await play_next(chat_id, send_message, force_skip=False)
                  return
 
-        # General error fallback
-        if os.path.exists(next_song['file_path']):
-            try: os.remove(next_song['file_path'])
-            except: pass
         await play_next(chat_id, send_message, force_skip=False)
 
 # ==========================================
@@ -364,28 +386,29 @@ async def play_command(client, message: Message):
             await status_msg.edit("❌ **No results found!**")
             return
         
-        # Download
+        # Get Direct Link (No Download)
         await status_msg.edit(
             "```\n"
-            "[████░░░░░░] 40%\n"
-            "⬇️ Downloading audio...\n"
+            "[██████░░░░] 60%\n"
+            "☁️ Streaming directly...\n"
             "```"
         )
         
-        audio_data = await download_audio(url)
+        # Get stream data using new helper
+        audio_data = await get_stream_data(url)
         
         # Processing
         await status_msg.edit(
             "```\n"
-            "[███████░░░] 70%\n"
+            "[████████░░] 80%\n"
             "🎵 Processing...\n"
             "```"
         )
         
         song_info = {
             'title': audio_data['title'],
-            'url': url,
-            'file_path': audio_data['file_path'],
+            'original_url': url, # Stored for JIT extraction later
+            'stream_url': audio_data['url'], # Live URL for now
             'duration': audio_data['duration'],
             'requester': message.from_user.mention,
             'thumbnail': audio_data.get('thumbnail')
@@ -428,7 +451,7 @@ async def play_command(client, message: Message):
                 await pytgcalls.play(
                     message.chat.id,
                     MediaStream(
-                        audio_data['file_path'],
+                        audio_data['url'],
                         audio_parameters=AudioQuality.HIGH
                     )
                 )
@@ -459,7 +482,7 @@ async def play_command(client, message: Message):
                         await pytgcalls.play(
                             message.chat.id,
                             MediaStream(
-                                audio_data['file_path'],
+                                audio_data['url'],
                                 audio_parameters=AudioQuality.HIGH
                             )
                         )
@@ -479,9 +502,6 @@ async def play_command(client, message: Message):
                         # Cleanup
                         if message.chat.id in current_playing:
                             del current_playing[message.chat.id]
-                        if os.path.exists(audio_data['file_path']):
-                            try: os.remove(audio_data['file_path'])
-                            except: pass
                         return
                 else:
                     # Other errors (network, ffmpeg, etc)
@@ -493,14 +513,14 @@ async def play_command(client, message: Message):
             if connection_success:
                 # Start monitoring for auto-next
                 task = asyncio.create_task(
-                    monitor_stream(message.chat.id, audio_data['file_path'], audio_data['duration'])
+                    monitor_stream(message.chat.id, audio_data['duration'])
                 )
                 monitoring_tasks[message.chat.id] = task
                 
                 print(f"✅ [play_command] Started playing and monitoring!")
                 
                 # Now playing message
-                format_type = "MP3" if FFMPEG_AVAILABLE else "M4A"
+                format_type = "Stream"
                 buttons = InlineKeyboardMarkup([
                     [
                         InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{message.chat.id}"),
@@ -514,7 +534,7 @@ async def play_command(client, message: Message):
                 ])
                 
                 now_playing = (
-                    f"**▶️ Now Playing ({format_type})**\n\n"
+                    f"**▶️ Now Playing (Direct)**\n\n"
                     f"🎵 **Title:** {audio_data['title']}\n"
                     f"👤 **Requested by:** {message.from_user.mention}\n"
                     f"⏱️ **Duration:** {audio_data['duration'] // 60}:{audio_data['duration'] % 60:02d}"
@@ -673,7 +693,7 @@ __help__ = """
 • `/queue` - Show queue
 
 **Features:**
-• Auto-converts to MP3 (192kbps)
+• **Direct Streaming (Fastest)**
 • Queue system with auto-play
 • Interactive controls
 • Auto-cleanup after playback
