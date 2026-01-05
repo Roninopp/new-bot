@@ -8,7 +8,7 @@ import os
 from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream, AudioQuality
+from pytgcalls.types import MediaStream, AudioQuality, StreamEndedError
 
 # Import from Part 1
 from Yumeko.modules.music import (
@@ -88,9 +88,10 @@ async def play_next(chat_id: int):
         # Try next song
         await play_next(chat_id)
 
-# Stream end handler - using decorator approach
-@pytgcalls.on_stream_end()
-async def stream_end_handler(client, update):
+# ==========================================
+# 🎵 STREAM END HANDLER
+# ==========================================
+async def handle_stream_end(client, update):
     """Handle when a stream ends"""
     chat_id = update.chat_id
     print(f"🎵 [stream_end] Stream ended in {chat_id}")
@@ -107,6 +108,9 @@ async def stream_end_handler(client, update):
     
     # Play next
     await play_next(chat_id)
+
+# Register the stream end handler
+pytgcalls.on_stream_end()(handle_stream_end)
 
 # ==========================================
 # 🎵 COMMANDS
@@ -128,7 +132,7 @@ async def play_command(client, message: Message):
     
     status_msg = await message.reply(
         "```\n"
-        "[▒▒▒▒▒▒▒▒▒▒] 0%\n"
+        "[░░░░░░░░░░] 0%\n"
         "⏳ Initializing...\n"
         "```"
     )
@@ -137,7 +141,7 @@ async def play_command(client, message: Message):
         # Search
         await status_msg.edit(
             "```\n"
-            "[██▒▒▒▒▒▒▒▒] 20%\n"
+            "[██░░░░░░░░] 20%\n"
             "🔍 Searching YouTube...\n"
             "```"
         )
@@ -150,7 +154,7 @@ async def play_command(client, message: Message):
         # Download
         await status_msg.edit(
             "```\n"
-            "[████▒▒▒▒▒▒] 40%\n"
+            "[████░░░░░░] 40%\n"
             "⬇️ Downloading audio...\n"
             "```"
         )
@@ -160,7 +164,7 @@ async def play_command(client, message: Message):
         # Processing
         await status_msg.edit(
             "```\n"
-            "[███████▒▒▒] 70%\n"
+            "[███████░░░] 70%\n"
             f"🎵 Processing...\n"
             "```"
         )
@@ -191,7 +195,7 @@ async def play_command(client, message: Message):
             # Joining
             await status_msg.edit(
                 "```\n"
-                "[█████████▒] 90%\n"
+                "[█████████░] 90%\n"
                 "🎙️ Connecting to voice chat...\n"
                 "```"
             )
@@ -309,7 +313,7 @@ async def button_handler(client, query: CallbackQuery):
     elif action == "queue":
         queue = get_queue(chat_id)
         if not queue and chat_id not in current_playing:
-            await query.answer("📭 Queue empty!", show_alert=True)
+            await query.answer("🔭 Queue empty!", show_alert=True)
             return
         
         text = "🎵 **Queue:**\n\n"
@@ -352,7 +356,7 @@ async def queue_command(client, message):
     """Show queue"""
     queue = get_queue(message.chat.id)
     if not queue and message.chat.id not in current_playing:
-        await message.reply("📭 **Queue is empty!**")
+        await message.reply("🔭 **Queue is empty!**")
         return
     
     text = "🎵 **Current Queue:**\n\n"
