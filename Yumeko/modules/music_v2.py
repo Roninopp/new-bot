@@ -7,8 +7,10 @@ import asyncio
 import os
 from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.errors import UserAlreadyParticipant, ChatAdminRequired, UserNotParticipant
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality
+from pytgcalls.exceptions import NoActiveGroupCall
 
 # Import from Part 1
 from Yumeko.modules.music import (
@@ -65,6 +67,41 @@ loop = asyncio.get_event_loop()
 loop.create_task(start_music_services())
 
 # ==========================================
+# 🎵 AUTO-JOIN GROUP HELPER
+# ==========================================
+async def ensure_userbot_in_chat(chat_id: int):
+    """Ensure userbot is in the chat, join if not"""
+    try:
+        # Check if userbot is already in chat
+        await userbot.get_chat_member(chat_id, (await userbot.get_me()).id)
+        print(f"✅ [ensure_userbot_in_chat] Already in chat {chat_id}")
+        return True
+    except UserNotParticipant:
+        print(f"🔄 [ensure_userbot_in_chat] Not in chat, attempting to join...")
+        try:
+            # Get invite link
+            chat = await app.get_chat(chat_id)
+            if chat.invite_link:
+                await userbot.join_chat(chat.invite_link)
+            else:
+                # Try to create invite link
+                invite_link = await app.export_chat_invite_link(chat_id)
+                await userbot.join_chat(invite_link)
+            
+            print(f"✅ [ensure_userbot_in_chat] Successfully joined {chat_id}")
+            await asyncio.sleep(2)  # Wait for join to complete
+            return True
+        except UserAlreadyParticipant:
+            print(f"✅ [ensure_userbot_in_chat] Already participant")
+            return True
+        except Exception as e:
+            print(f"❌ [ensure_userbot_in_chat] Failed to join: {e}")
+            return False
+    except Exception as e:
+        print(f"❌ [ensure_userbot_in_chat] Error checking membership: {e}")
+        return False
+
+# ==========================================
 # 🎵 STREAM MONITOR (Alternative to event handler)
 # ==========================================
 async def monitor_stream(chat_id: int, file_path: str, duration: int):
@@ -75,7 +112,7 @@ async def monitor_stream(chat_id: int, file_path: str, duration: int):
         # Wait for song duration + 2 seconds buffer
         await asyncio.sleep(duration + 2)
         
-        print(f"🎵 [monitor_stream] Stream should have ended in {chat_id}")
+        print(f"🎵 [monitor_stream] Stream ended in {chat_id}")
         
         # Clean up current file
         if os.path.exists(file_path):
@@ -90,6 +127,12 @@ async def monitor_stream(chat_id: int, file_path: str, duration: int):
         
     except asyncio.CancelledError:
         print(f"🎵 [monitor_stream] Monitoring cancelled for {chat_id}")
+        # Clean up on cancel
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except:
+                pass
     except Exception as e:
         print(f"❌ [monitor_stream] Error: {e}")
 
@@ -141,6 +184,7 @@ async def play_next(chat_id: int):
             monitor_stream(chat_id, next_song['file_path'], next_song.get('duration', 180))
         )
         monitoring_tasks[chat_id] = task
+        print(f"✅ [play_next] Started playing and monitoring")
         
     except Exception as e:
         print(f"❌ [play_next] Failed: {e}")
@@ -164,11 +208,16 @@ async def play_command(client, message: Message):
     print(f"\n🎵 [play_command] ========== RECEIVED ==========")
     print(f"🎵 [play_command] Chat: {message.chat.id}, User: {message.from_user.id}")
     
+    # Check if query provided
     if len(message.command) < 2:
-        await message.reply("**Usage:** `/play <song name or URL>`")
+        await message.reply("**Usage:** `/play <song name or URL>`\n\n**Example:** `/play Believer`")
         return
     
-    query = message.text.split(maxsplit=1)[1]
+    query = message.text.split(maxsplit=1)[1].strip()
+    if not query:
+        await message.reply("**Usage:** `/play <song name or URL>`\n\n**Example:** `/play Believer`")
+        return
+    
     print(f"🎵 [play_command] Query: {query}")
     
     status_msg = await message.reply(
@@ -179,6 +228,21 @@ async def play_command(client, message: Message):
     )
     
     try:
+        # Ensure userbot is in chat
+        await status_msg.edit(
+            "```\n"
+            "[█░░░░░░░░░] 10%\n"
+            "🔄 Checking userbot...\n"
+            "```"
+        )
+        
+        if not await ensure_userbot_in_chat(message.chat.id):
+            await status_msg.edit(
+                "❌ **Failed to join chat!**\n\n"
+                "Please add the userbot to this group first."
+            )
+            return
+        
         # Search
         await status_msg.edit(
             "```\n"
@@ -206,7 +270,7 @@ async def play_command(client, message: Message):
         await status_msg.edit(
             "```\n"
             "[███████░░░] 70%\n"
-            f"🎵 Processing...\n"
+            "🎵 Processing...\n"
             "```"
         )
         
@@ -231,6 +295,7 @@ async def play_command(client, message: Message):
                 f"⏱️ **Duration:** {audio_data['duration'] // 60}:{audio_data['duration'] % 60:02d}"
             )
             await status_msg.edit(queue_msg)
+            print(f"✅ [play_command] Added to queue at position {position}")
         else:
             current_playing[message.chat.id] = song_info
             
@@ -257,7 +322,7 @@ async def play_command(client, message: Message):
                 )
                 monitoring_tasks[message.chat.id] = task
                 
-                print(f"✅ [play_command] Started playing!")
+                print(f"✅ [play_command] Started playing and monitoring!")
                 
                 # Now playing message
                 format_type = "MP3" if FFMPEG_AVAILABLE else "M4A"
@@ -293,6 +358,13 @@ async def play_command(client, message: Message):
                 else:
                     await status_msg.edit(now_playing, reply_markup=buttons)
                 
+            except NoActiveGroupCall:
+                await status_msg.edit(
+                    "❌ **No active voice chat!**\n\n"
+                    "Please start a voice chat first."
+                )
+                if message.chat.id in current_playing:
+                    del current_playing[message.chat.id]
             except Exception as e:
                 error_str = str(e)
                 print(f"❌ [play_command] VC join error: {error_str}")
@@ -305,7 +377,7 @@ async def play_command(client, message: Message):
                         "❌ **No active voice chat!**\n\n"
                         "Please start a voice chat first."
                     )
-                elif "ADMIN_REQUIRED" in error_str:
+                elif "ADMIN_REQUIRED" in error_str or "privilege" in error_str.lower():
                     await status_msg.edit(
                         "❌ **Permission error!**\n\n"
                         "Make sure userbot can join voice chats."
@@ -325,7 +397,7 @@ async def play_command(client, message: Message):
         elif "ffmpeg" in error_msg.lower():
             await status_msg.edit("❌ **FFmpeg Error!**")
         else:
-            await status_msg.edit(f"❌ **Error:** {error_msg[:150]}")
+            await status_msg.edit(f"❌ **Error:** `{error_msg[:150]}`")
 
 # Button handlers
 @app.on_callback_query(filters.regex(r"^(pause|skip|stop|queue|close)"))
@@ -461,6 +533,7 @@ __help__ = """
 • Interactive controls
 • Auto-cleanup after playback
 • Leaves VC after 3s when queue empty
+• Auto-joins new groups
 
 **Note:** Voice chat must be active!
 """
