@@ -368,18 +368,43 @@ def clear_queue(chat_id: int):
     if chat_id in current_playing: del current_playing[chat_id]
 
 async def play_next(chat_id: int):
+    """Play the next song in queue"""
+    print(f"🎵 [play_next] Called for chat {chat_id}")
+    
     queue = get_queue(chat_id)
+    
     if not queue:
-        try: await pytgcalls.leave_call(chat_id)
-        except: pass
-        if chat_id in current_playing: del current_playing[chat_id]
+        print(f"🎵 [play_next] Queue empty, leaving call")
+        try:
+            await pytgcalls.leave_call(chat_id)
+        except Exception as e:
+            print(f"⚠️ [play_next] Failed to leave call: {e}")
+        
+        if chat_id in current_playing:
+            del current_playing[chat_id]
         return
     
+    # Get next song
     next_song = queue.pop(0)
     current_playing[chat_id] = next_song
+    
+    print(f"🎵 [play_next] Playing next: {next_song['title']}")
+    
     try:
-        await pytgcalls.play(chat_id, MediaStream(next_song['file_path'], audio_parameters=AudioQuality.HIGH))
-    except: 
+        await pytgcalls.play(
+            chat_id,
+            MediaStream(
+                next_song['file_path'],
+                audio_parameters=AudioQuality.HIGH
+            )
+        )
+        
+        # Start monitoring this stream
+        asyncio.create_task(monitor_stream(chat_id, next_song['file_path']))
+        
+    except Exception as e:
+        print(f"❌ [play_next] Failed to play: {e}")
+        # Try next song
         await play_next(chat_id)
 
 @app.on_message(filters.command("play", config.COMMAND_PREFIXES) & filters.group)
@@ -506,18 +531,43 @@ async def play_command(client, message: Message):
             await status_msg.edit(f"❌ **Error:** {error_msg[:150]}")
 
 async def monitor_stream(chat_id: int, file_path: str):
+    """Monitor the stream and clean up when finished"""
     try:
+        print(f"🔍 [monitor_stream] Started monitoring chat {chat_id}")
+        
+        # Wait a bit before starting to check
+        await asyncio.sleep(5)
+        
         while chat_id in current_playing:
-            await asyncio.sleep(2)
-            try: 
-                await pytgcalls.get_call(chat_id)
-            except: 
+            await asyncio.sleep(3)
+            
+            try:
+                # Check if call is still active
+                call = await pytgcalls.get_call(chat_id)
+                if call is None:
+                    print(f"🔍 [monitor_stream] Call ended in chat {chat_id}")
+                    break
+            except Exception as e:
+                print(f"🔍 [monitor_stream] Call check failed: {e}")
                 break
-        if os.path.exists(file_path): 
-            os.remove(file_path)
+        
+        print(f"🔍 [monitor_stream] Cleaning up chat {chat_id}")
+        
+        # Clean up the file
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                print(f"🗑️ [monitor_stream] Deleted file: {file_path}")
+            except Exception as e:
+                print(f"⚠️ [monitor_stream] Failed to delete file: {e}")
+        
+        # Play next song if in queue
         await play_next(chat_id)
-    except: 
-        pass
+        
+    except Exception as e:
+        print(f"❌ [monitor_stream] Error: {e}")
+        if chat_id in current_playing:
+            del current_playing[chat_id]
 
 @app.on_message(filters.command("stop", config.COMMAND_PREFIXES) & filters.group)
 async def stop_command(client, message):
