@@ -31,35 +31,9 @@ async def escape_mentions_using_curly_brackets_wl(
     text: str,
     parse_words: list,
 ) -> str:
-    """Format welcome text with user variables"""
     teks = await escape_invalid_curly_brackets(text, parse_words)
     if teks:
         chat_title = m.chat.title if hasattr(m.chat, 'title') and m.chat.title else "this chat"
-        
-        # Build username string
-        if user.username:
-            username_str = "@" + escape(user.username)
-        else:
-            username_str = escape(user.first_name)
-        
-        # Build mention HTML
-        mention_str = f'<a href="tg://user?id={user.id}">{escape(user.first_name)}</a>'
-        
-        # Get user bio if available
-        bio_str = ""
-        try:
-            # Try to get full user info with bio
-            from Yumeko import app
-            full_user = await app.get_users(user.id)
-            if hasattr(full_user, 'bio') and full_user.bio:
-                bio_str = escape(full_user.bio)
-            else:
-                bio_str = "No bio set"
-        except Exception as e:
-            print(f"[WELCOME] Could not fetch bio: {e}")
-            bio_str = "Bio unavailable"
-        
-        # Format the text with all variables
         teks = teks.format(
             first=escape(user.first_name),
             last=escape(user.last_name or user.first_name),
@@ -71,11 +45,14 @@ async def escape_mentions_using_curly_brackets_wl(
                 if user.last_name
                 else [escape(user.first_name)],
             ),
-            username=username_str,
-            mention=mention_str,
+            username=(
+                "@" + (await escape_markdown(escape(user.username)))
+                if user.username
+                else (await (mention_html(escape(user.first_name), user.id)))
+            ),
+            mention=await (mention_html(escape(user.first_name), user.id)),
             chatname=chat_title,
             id=user.id,
-            bio=bio_str,
         )
     else:
         teks = ""
@@ -127,54 +104,28 @@ def get_font(size, bold=False):
 
 
 async def create_welcome_card(user: User, chat_title: str, member_count: int, profile_pic_path=None):
-    """Create an EPIC cyberpunk welcome card"""
+    """Create a professional welcome card"""
     try:
-        # Create base image with dark cyberpunk background
-        img = Image.new('RGB', (WELCOME_CARD_WIDTH, WELCOME_CARD_HEIGHT), (10, 10, 30))
+        # Create base image with gradient background
+        img = Image.new('RGB', (WELCOME_CARD_WIDTH, WELCOME_CARD_HEIGHT), BACKGROUND_COLOR)
         draw = ImageDraw.Draw(img, 'RGBA')
         
-        # Create cyberpunk gradient (deep purple to blue)
+        # Create gradient effect
         for i in range(WELCOME_CARD_HEIGHT):
-            ratio = i / WELCOME_CARD_HEIGHT
-            r = int(20 + (50 - 20) * ratio)
-            g = int(10 + (30 - 10) * ratio)
-            b = int(40 + (80 - 40) * ratio)
-            draw.rectangle([(0, i), (WELCOME_CARD_WIDTH, i + 1)], fill=(r, g, b))
-        
-        # Add cyberpunk city silhouette effect
-        for i in range(0, WELCOME_CARD_WIDTH, 60):
-            building_height = 150 + (i % 3) * 50
-            building_width = 40
+            alpha = int(255 * (1 - i / WELCOME_CARD_HEIGHT) * 0.3)
             draw.rectangle(
-                [(i, WELCOME_CARD_HEIGHT - building_height), (i + building_width, WELCOME_CARD_HEIGHT)],
-                fill=(15, 20, 35, 180)
+                [(0, i), (WELCOME_CARD_WIDTH, i + 1)],
+                fill=(0, 0, 0, alpha)
             )
-            # Building windows (cyan glow)
-            for window_y in range(WELCOME_CARD_HEIGHT - building_height + 20, WELCOME_CARD_HEIGHT - 10, 25):
-                for window_x in range(i + 8, i + building_width - 8, 12):
-                    if (window_x + window_y) % 2 == 0:
-                        draw.rectangle(
-                            [(window_x, window_y), (window_x + 6, window_y + 12)],
-                            fill=(0, 255, 255, 150)
-                        )
         
-        # Add electric lightning bolts (cyan)
+        # Add decorative circles
         draw = ImageDraw.Draw(img, 'RGBA')
-        # Left side lightning
-        draw.polygon([(50, 100), (80, 180), (60, 180), (90, 280)], fill=(0, 255, 255, 100))
-        draw.polygon([(150, 80), (180, 150), (160, 150), (190, 220)], fill=(0, 255, 255, 80))
-        # Right side lightning  
-        draw.polygon([(950, 120), (920, 200), (940, 200), (910, 300)], fill=(255, 50, 100, 100))
-        draw.polygon([(870, 90), (840, 160), (860, 160), (830, 230)], fill=(255, 50, 100, 80))
+        draw.ellipse([(-100, -100), (200, 200)], fill=(255, 255, 255, 20))
+        draw.ellipse([(WELCOME_CARD_WIDTH - 200, WELCOME_CARD_HEIGHT - 100), 
+                     (WELCOME_CARD_WIDTH + 100, WELCOME_CARD_HEIGHT + 200)], 
+                     fill=(255, 255, 255, 20))
         
-        # Add glowing circuit lines
-        draw.line([(0, 150), (300, 100), (600, 150)], fill=(0, 255, 255, 100), width=2)
-        draw.line([(WELCOME_CARD_WIDTH, 180), (700, 130), (400, 180)], fill=(255, 50, 100, 100), width=2)
-        
-        # Load and process profile picture with INTENSE ELECTRIC GLOW
-        profile_x = (WELCOME_CARD_WIDTH - PROFILE_PIC_SIZE) // 2
-        profile_y = 60
-        
+        # Load and process profile picture
         if profile_pic_path and os.path.exists(profile_pic_path):
             try:
                 profile_pic = Image.open(profile_pic_path)
@@ -182,69 +133,24 @@ async def create_welcome_card(user: User, chat_title: str, member_count: int, pr
                 
                 # Create circular mask
                 mask = create_circular_mask(PROFILE_PIC_SIZE)
+                
+                # Create circular profile pic
                 circular_pic = Image.new('RGBA', (PROFILE_PIC_SIZE, PROFILE_PIC_SIZE), (0, 0, 0, 0))
                 circular_pic.paste(profile_pic.convert('RGB'), (0, 0))
                 circular_pic.putalpha(mask)
                 
-                # INTENSE ELECTRIC GLOW RINGS (like the reference image!)
-                draw = ImageDraw.Draw(img, 'RGBA')
+                # Add white border
+                border_size = 8
+                border_pic = Image.new('RGBA', (PROFILE_PIC_SIZE + border_size * 2, 
+                                                PROFILE_PIC_SIZE + border_size * 2), (255, 255, 255, 255))
+                border_mask = create_circular_mask(PROFILE_PIC_SIZE + border_size * 2)
+                border_pic.putalpha(border_mask)
                 
-                # Multiple concentric rings with high intensity
-                for ring_num in range(8):
-                    ring_offset = 15 + ring_num * 5
-                    ring_alpha = 255 - ring_num * 25
-                    # Cyan electric rings
-                    draw.ellipse([
-                        (profile_x - ring_offset, profile_y - ring_offset),
-                        (profile_x + PROFILE_PIC_SIZE + ring_offset, profile_y + PROFILE_PIC_SIZE + ring_offset)
-                    ], outline=(0, 255, 255, ring_alpha), width=3)
+                # Position profile picture
+                profile_x = (WELCOME_CARD_WIDTH - PROFILE_PIC_SIZE) // 2
+                profile_y = 80
                 
-                # Outer glow burst effect
-                for burst in range(12, 0, -1):
-                    burst_size = 60 + burst * 3
-                    burst_alpha = int(200 * (12 - burst) / 12 * 0.3)
-                    draw.ellipse([
-                        (profile_x - burst_size, profile_y - burst_size),
-                        (profile_x + PROFILE_PIC_SIZE + burst_size, profile_y + PROFILE_PIC_SIZE + burst_size)
-                    ], outline=(150, 255, 255, burst_alpha), width=2)
-                
-                # INTENSE WINGS - Symmetrical arc-based wings
-                wing_center_y = profile_y + PROFILE_PIC_SIZE // 2
-                wing_base_x_left = profile_x - 20
-                wing_base_x_right = profile_x + PROFILE_PIC_SIZE + 20
-                
-                # Left wing - multiple layers for intensity
-                for layer in range(6):
-                    wing_length = 80 + layer * 12
-                    wing_height = 50 + layer * 8
-                    wing_alpha = 255 - layer * 35
-                    
-                    # Create wing shape with multiple arcs
-                    for arc_offset in range(3):
-                        draw.arc([
-                            (wing_base_x_left - wing_length - arc_offset * 3, wing_center_y - wing_height - arc_offset * 2),
-                            (wing_base_x_left + arc_offset * 3, wing_center_y + wing_height + arc_offset * 2)
-                        ], start=-100, end=100, fill=(200, 255, 255, wing_alpha), width=4 - layer // 2)
-                
-                # Right wing - mirrored
-                for layer in range(6):
-                    wing_length = 80 + layer * 12
-                    wing_height = 50 + layer * 8
-                    wing_alpha = 255 - layer * 35
-                    
-                    for arc_offset in range(3):
-                        draw.arc([
-                            (wing_base_x_right - arc_offset * 3, wing_center_y - wing_height - arc_offset * 2),
-                            (wing_base_x_right + wing_length + arc_offset * 3, wing_center_y + wing_height + arc_offset * 2)
-                        ], start=80, end=280, fill=(200, 255, 255, wing_alpha), width=4 - layer // 2)
-                
-                # Inner bright white ring
-                draw.ellipse([
-                    (profile_x - 8, profile_y - 8),
-                    (profile_x + PROFILE_PIC_SIZE + 8, profile_y + PROFILE_PIC_SIZE + 8)
-                ], outline=(255, 255, 255, 255), width=4)
-                
-                # Paste profile pic on top
+                img.paste(border_pic, (profile_x - border_size, profile_y - border_size), border_pic)
                 img.paste(circular_pic, (profile_x, profile_y), circular_pic)
                 
                 # Clean up
@@ -255,196 +161,75 @@ async def create_welcome_card(user: User, chat_title: str, member_count: int, pr
             except Exception as e:
                 print(f"Error processing profile pic: {e}")
         else:
-            # Draw default avatar with INTENSE ELECTRIC EFFECT
+            # Draw default avatar circle if no profile pic
+            profile_x = (WELCOME_CARD_WIDTH - PROFILE_PIC_SIZE) // 2
+            profile_y = 80
             draw = ImageDraw.Draw(img, 'RGBA')
             
-            # Concentric electric rings
-            for ring_num in range(8):
-                ring_offset = 15 + ring_num * 5
-                ring_alpha = 255 - ring_num * 25
-                draw.ellipse([
-                    (profile_x - ring_offset, profile_y - ring_offset),
-                    (profile_x + PROFILE_PIC_SIZE + ring_offset, profile_y + PROFILE_PIC_SIZE + ring_offset)
-                ], outline=(0, 255, 255, ring_alpha), width=3)
-            
-            # Outer glow
-            for burst in range(12, 0, -1):
-                burst_size = 60 + burst * 3
-                burst_alpha = int(200 * (12 - burst) / 12 * 0.3)
-                draw.ellipse([
-                    (profile_x - burst_size, profile_y - burst_size),
-                    (profile_x + PROFILE_PIC_SIZE + burst_size, profile_y + PROFILE_PIC_SIZE + burst_size)
-                ], outline=(150, 255, 255, burst_alpha), width=2)
-            
-            # Wings for default avatar
-            wing_center_y = profile_y + PROFILE_PIC_SIZE // 2
-            wing_base_x_left = profile_x - 20
-            wing_base_x_right = profile_x + PROFILE_PIC_SIZE + 20
-            
-            # Left wing
-            for layer in range(6):
-                wing_length = 80 + layer * 12
-                wing_height = 50 + layer * 8
-                wing_alpha = 255 - layer * 35
-                
-                for arc_offset in range(3):
-                    draw.arc([
-                        (wing_base_x_left - wing_length - arc_offset * 3, wing_center_y - wing_height - arc_offset * 2),
-                        (wing_base_x_left + arc_offset * 3, wing_center_y + wing_height + arc_offset * 2)
-                    ], start=-100, end=100, fill=(200, 255, 255, wing_alpha), width=4 - layer // 2)
-            
-            # Right wing
-            for layer in range(6):
-                wing_length = 80 + layer * 12
-                wing_height = 50 + layer * 8
-                wing_alpha = 255 - layer * 35
-                
-                for arc_offset in range(3):
-                    draw.arc([
-                        (wing_base_x_right - arc_offset * 3, wing_center_y - wing_height - arc_offset * 2),
-                        (wing_base_x_right + wing_length + arc_offset * 3, wing_center_y + wing_height + arc_offset * 2)
-                    ], start=80, end=280, fill=(200, 255, 255, wing_alpha), width=4 - layer // 2)
-            
-            # Inner white ring
+            # White border
             draw.ellipse([
                 (profile_x - 8, profile_y - 8),
                 (profile_x + PROFILE_PIC_SIZE + 8, profile_y + PROFILE_PIC_SIZE + 8)
-            ], outline=(255, 255, 255, 255), width=4)
+            ], fill=(255, 255, 255, 255))
             
-            # Avatar circle (dark)
+            # Avatar circle
             draw.ellipse([
                 (profile_x, profile_y),
                 (profile_x + PROFILE_PIC_SIZE, profile_y + PROFILE_PIC_SIZE)
-            ], fill=(15, 15, 25, 255))
+            ], fill=(52, 152, 219, 255))
             
-            # User initial with intense glow
+            # Draw user initial
             initial = user.first_name[0].upper() if user.first_name else "U"
-            initial_font = get_font(100, bold=True)
+            initial_font = get_font(80, bold=True)
             
+            # Get text size for centering
             bbox = draw.textbbox((0, 0), initial, font=initial_font)
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
+            
             text_x = profile_x + (PROFILE_PIC_SIZE - text_width) // 2
             text_y = profile_y + (PROFILE_PIC_SIZE - text_height) // 2
             
-            # Intense glow for initial
-            for glow_radius in range(10, 0, -1):
-                glow_alpha = int(255 * (10 - glow_radius) / 10 * 0.5)
-                for dx in range(-glow_radius, glow_radius + 1):
-                    for dy in range(-glow_radius, glow_radius + 1):
-                        if dx * dx + dy * dy <= glow_radius * glow_radius:
-                            draw.text((text_x + dx, text_y + dy), initial, font=initial_font, fill=(0, 255, 255, glow_alpha // 3))
-            
-            # Main initial text
             draw.text((text_x, text_y), initial, font=initial_font, fill=(255, 255, 255, 255))
         
-        # Draw CYBERPUNK text with ELECTRIC GLOW
+        # Draw text
         draw = ImageDraw.Draw(img)
         
-        # WELCOME text with massive glow
-        welcome_font = get_font(70, bold=True)
+        # Welcome text
+        welcome_font = get_font(48, bold=True)
         welcome_text = "WELCOME!"
         bbox = draw.textbbox((0, 0), welcome_text, font=welcome_font)
         text_width = bbox[2] - bbox[0]
-        text_x = (WELCOME_CARD_WIDTH - text_width) // 2
-        text_y = 300
+        draw.text(
+            ((WELCOME_CARD_WIDTH - text_width) // 2, 300),
+            welcome_text,
+            font=welcome_font,
+            fill=TEXT_COLOR
+        )
         
-        # Multi-layer glow effect (cyan and white)
-        for glow_offset in range(8, 0, -1):
-            glow_alpha = int(255 * (8 - glow_offset) / 8 * 0.6)
-            for dx in range(-glow_offset, glow_offset + 1, 2):
-                for dy in range(-glow_offset, glow_offset + 1, 2):
-                    draw.text(
-                        (text_x + dx, text_y + dy),
-                        welcome_text,
-                        font=welcome_font,
-                        fill=(0, 255, 255, glow_alpha // 2)
-                    )
-        
-        # Outer stroke (dark cyan)
-        for offset in [(-3,-3), (3,-3), (-3,3), (3,3), (-3,0), (3,0), (0,-3), (0,3)]:
-            draw.text(
-                (text_x + offset[0], text_y + offset[1]),
-                welcome_text,
-                font=welcome_font,
-                fill=(0, 150, 180, 255)
-            )
-        
-        # Main text (white with cyan tint)
-        draw.text((text_x, text_y), welcome_text, font=welcome_font, fill=(200, 255, 255, 255))
-        
-        # User name with STYLIZED FONT effect
-        name_font = get_font(45, bold=True)
-        user_name = user.first_name[:25]
+        # User name
+        name_font = get_font(36, bold=True)
+        user_name = user.first_name[:30]  # Limit length
         bbox = draw.textbbox((0, 0), user_name, font=name_font)
         text_width = bbox[2] - bbox[0]
-        name_x = (WELCOME_CARD_WIDTH - text_width) // 2
-        name_y = 385
+        draw.text(
+            ((WELCOME_CARD_WIDTH - text_width) // 2, 360),
+            user_name,
+            font=name_font,
+            fill=TEXT_COLOR
+        )
         
-        # Name glow (red/pink for contrast)
-        for glow_offset in range(5, 0, -1):
-            glow_alpha = int(255 * (5 - glow_offset) / 5 * 0.5)
-            for dx in range(-glow_offset, glow_offset + 1):
-                for dy in range(-glow_offset, glow_offset + 1):
-                    draw.text(
-                        (name_x + dx, name_y + dy),
-                        user_name,
-                        font=name_font,
-                        fill=(255, 50, 100, glow_alpha // 2)
-                    )
-        
-        # Name stroke
-        for offset in [(-2,-2), (2,-2), (-2,2), (2,2), (-2,0), (2,0), (0,-2), (0,2)]:
-            draw.text(
-                (name_x + offset[0], name_y + offset[1]),
-                user_name,
-                font=name_font,
-                fill=(150, 30, 60, 255)
-            )
-        
-        # Main name text
-        draw.text((name_x, name_y), user_name, font=name_font, fill=(255, 200, 220, 255))
-        
-        # Member count info with ELECTRIC style
-        info_font = get_font(28, bold=True)
-        chat_info = f"You are member #{member_count} of {chat_title[:35]}"
+        # Chat info
+        info_font = get_font(24)
+        chat_info = f"You are member #{member_count} of {chat_title[:40]}"
         bbox = draw.textbbox((0, 0), chat_info, font=info_font)
         text_width = bbox[2] - bbox[0]
-        info_x = (WELCOME_CARD_WIDTH - text_width) // 2
-        info_y = 445
-        
-        # Info glow (subtle cyan)
-        for offset in [(-2,-2), (2,-2), (-2,2), (2,2)]:
-            draw.text(
-                (info_x + offset[0], info_y + offset[1]),
-                chat_info,
-                font=info_font,
-                fill=(0, 255, 255, 80)
-            )
-        
-        # Main info text
-        draw.text((info_x, info_y), chat_info, font=info_font, fill=(180, 240, 255, 255))
-        
-        # Add decorative elements
-        # Skulls and flames (simplified as symbols)
-        symbol_font = get_font(30, bold=True)
-        symbols = "💀 🔥 ⚡ 💀 🔥 ⚡ 💀"
-        bbox = draw.textbbox((0, 0), symbols, font=symbol_font)
-        symbol_width = bbox[2] - bbox[0]
-        symbol_x = (WELCOME_CARD_WIDTH - symbol_width) // 2
-        
-        # Top symbols
-        draw.text((symbol_x, 25), symbols, font=symbol_font, fill=(255, 255, 255, 200), embedded_color=True)
-        
-        # Bottom symbols
-        draw.text((symbol_x, WELCOME_CARD_HEIGHT - 45), symbols, font=symbol_font, fill=(255, 255, 255, 200), embedded_color=True)
-        
-        # Corner stars
-        star_font = get_font(25, bold=True)
-        draw.text((20, 20), "⭐", font=star_font, fill=(255, 255, 255, 255), embedded_color=True)
-        draw.text((WELCOME_CARD_WIDTH - 50, 20), "⭐", font=star_font, fill=(255, 255, 255, 255), embedded_color=True)
-        draw.text((20, WELCOME_CARD_HEIGHT - 50), "⭐", font=star_font, fill=(255, 255, 255, 255), embedded_color=True)
-        draw.text((WELCOME_CARD_WIDTH - 50, WELCOME_CARD_HEIGHT - 50), "⭐", font=star_font, fill=(255, 255, 255, 255), embedded_color=True)
+        draw.text(
+            ((WELCOME_CARD_WIDTH - text_width) // 2, 420),
+            chat_info,
+            font=info_font,
+            fill=(255, 255, 255, 200)
+        )
         
         # Save to BytesIO
         output = BytesIO()
@@ -455,8 +240,6 @@ async def create_welcome_card(user: User, chat_title: str, member_count: int, pr
         
     except Exception as e:
         print(f"Error creating welcome card: {e}")
-        import traceback
-        traceback.print_exc()
         return None
 
 
@@ -515,7 +298,7 @@ async def send_welcome_message(c: Client, chat_id: int, user: User, chat_obj):
         
         minimal_msg = MinimalMsg(chat_obj)
         
-        parse_words = ["first", "last", "fullname", "username", "mention", "id", "chatname", "bio"]
+        parse_words = ["first", "last", "fullname", "username", "mention", "id", "chatname"]
         
         if is_custom_welcome:
             # Custom welcome
@@ -706,37 +489,36 @@ async def on_new_member_added(c: Client, m: Message):
         print(f"[WELCOME DEBUG] Returned from send_welcome_message for user {user.first_name}")
 
 
-# PRIMARY HANDLER: Status-based detection (works in ALL group types)
-# This handler watches member status changes directly - works even when service messages are hidden
+# Handler 2: Users joining (PRIMARY handler for Supergroups)
+# This handler watches the member list DIRECTLY - works even when service messages are hidden
+# Uses the PROVEN simple check from professional bots
 # NOTE: Bot MUST be an admin to receive chat_member_updated events
 @app.on_chat_member_updated()
-async def on_member_status_changed(c: Client, update: ChatMemberUpdated):
-    """
-    PRIMARY HANDLER: Detects user joins via status transitions.
-    Works in ALL groups (public/private/supergroups) regardless of service message settings.
-    """
+async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
+    # CATCH-ALL LOG
     print(f"\n{'='*80}")
     print(f"[WELCOME CMU] chat_member_updated TRIGGERED")
     print(f"[WELCOME CMU] Chat ID: {update.chat.id}")
     print(f"[WELCOME CMU] Chat Type: {update.chat.type}")
+    print(f"[WELCOME CMU] Chat Title: {update.chat.title if hasattr(update.chat, 'title') else 'NO TITLE'}")
     print(f"[WELCOME CMU] old_chat_member: {update.old_chat_member is not None}")
     print(f"[WELCOME CMU] new_chat_member: {update.new_chat_member is not None}")
     print(f"{'='*80}\n")
     
-    # Skip private chats (1-on-1 conversations)
+    # Skip private chats
     if update.chat.type == ChatType.PRIVATE:
         print(f"[WELCOME CMU] ❌ REJECTED: Private chat")
         return
     
-    # Process ALL group types including supergroups
+    # Only process groups
     if update.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL]:
         print(f"[WELCOME CMU] ❌ REJECTED: Invalid chat type {update.chat.type}")
         return
     
-    print(f"[WELCOME CMU] ✓ Valid group type: {update.chat.type}")
+    print(f"[WELCOME CMU] ✓ Valid group type")
     
-    # THE PROVEN SIMPLE CHECK - works in supergroups!
-    # This is the EXACT logic from your friend's working code
+    # THE PROVEN SIMPLE CHECK (from your friend's code)
+    # This is how Rose, GroupHelp, and all major bots detect joins!
     if update.new_chat_member and not update.old_chat_member:
         print(f"[WELCOME CMU] ✓✓✓ NEW JOIN DETECTED!")
         print(f"[WELCOME CMU] Logic: new_chat_member EXISTS and old_chat_member is None")
@@ -752,8 +534,9 @@ async def on_member_status_changed(c: Client, update: ChatMemberUpdated):
     
     print(f"[WELCOME CMU] User: {user.first_name} (ID: {user.id})")
     print(f"[WELCOME CMU] is_bot: {user.is_bot}")
+    print(f"[WELCOME CMU] is_self: {getattr(user, 'is_self', False)}")
     
-    # Skip bot itself (check both is_self and ID)
+    # Skip bot itself (using is_self like your friend's code)
     if getattr(user, 'is_self', False) or user.id == c.me.id:
         print(f"[WELCOME CMU] ❌ SKIPPED: Bot itself")
         return
@@ -763,7 +546,7 @@ async def on_member_status_changed(c: Client, update: ChatMemberUpdated):
     
     await send_welcome_message(c, update.chat.id, user, update.chat)
     
-    print(f"[WELCOME CMU] ✓ Welcome sent!")
+    print(f"[WELCOME CMU] ✓ Welcome sent successfully!")
     print(f"[WELCOME CMU] ========== END ==========\n")
     
     # Check if it's actually a new join
