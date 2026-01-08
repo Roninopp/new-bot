@@ -2,20 +2,18 @@ from pyrogram import filters, Client
 from pyrogram.types import Message
 
 # ---------------------------------------------------------------------------------
-# IMPORTANT: Adjust these imports to match your actual file structure
-# You need to import:
-# 1. 'app' -> Your Bot Client
-# 2. 'call_py' -> Your PyTgCalls Client (the one running the music)
-# 3. 'SUDOERS' -> Your list of admin IDs
+# Importing 'app' and 'call_py' from your main 'yumeko' file/folder
 # ---------------------------------------------------------------------------------
-from MusicBot import app, call_py  # <--- CHANGE 'MusicBot' to your main file name
-from config import SUDOERS         # <--- CHANGE to where your config is
-# ---------------------------------------------------------------------------------
+from yumeko import app, call_py 
 
-@app.on_message(filters.command("active_vc") & filters.user(SUDOERS))
+# Direct Owner ID
+OWNER_ID = 6837532865
+
+@app.on_message(filters.command("active_vc") & filters.user(OWNER_ID))
 async def active_vc_list(client: Client, message: Message):
     """
     Shows a list of all groups where the bot is currently playing music.
+    Only works for the Owner (6837532865).
     """
     msg = await message.reply_text("🔄 **Scanning active voice chats...**")
     
@@ -48,10 +46,9 @@ async def active_vc_list(client: Client, message: Message):
                 text += f"**{count}. {chat_title}**\n   ID: `{chat_id}` | {username}\n"
                 
             except Exception as e:
-                # If a specific chat fails, skip it but continue the loop
                 continue
 
-        # Split text if it's too long (Telegram limit is 4096 chars)
+        # Split text if it's too long
         if len(text) > 4000:
             await msg.edit_text(
                 f"**🔊 Active Voice Chats ({len(active_calls)})**\n\n"
