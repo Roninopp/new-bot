@@ -1,11 +1,7 @@
 from pyrogram import filters, Client
 from pyrogram.types import Message
-
-# ---------------------------------------------------------------------------------
-# Importing 'app' and 'call_py' from your main 'yumeko' file/folder
-# ---------------------------------------------------------------------------------
 from Yumeko import app
-from Yumeko.modules.music import call_py  # ✅ Import from music module
+
 # Direct Owner ID
 OWNER_ID = 6837532865
 
@@ -18,6 +14,25 @@ async def active_vc_list(client: Client, message: Message):
     msg = await message.reply_text("🔄 **Scanning active voice chats...**")
     
     try:
+        # Try to import call_py from music module
+        try:
+            from Yumeko.modules.music import call_py
+        except ImportError:
+            await msg.edit_text(
+                "❌ **Voice chat module not available!**\n\n"
+                "The music module with `call_py` is not properly configured.\n"
+                "Please check if PyTgCalls is installed and music module is working."
+            )
+            return
+        
+        # Check if call_py exists and has active_calls
+        if not hasattr(call_py, 'active_calls'):
+            await msg.edit_text(
+                "❌ **Voice chat tracking not available!**\n\n"
+                "The `call_py` object doesn't have `active_calls` attribute."
+            )
+            return
+        
         # Get the list of active calls from PyTgCalls
         active_calls = call_py.active_calls
         
@@ -60,3 +75,19 @@ async def active_vc_list(client: Client, message: Message):
 
     except Exception as e:
         await msg.edit_text(f"❌ **Error fetching active calls:**\n`{e}`")
+
+
+# Module info
+__module__ = "Admin VC"
+
+__help__ = """**Voice Chat Admin Commands:**
+
+**Owner Only Commands:**
+
+  /active_vc - List all active voice chats
+  • Shows all groups where bot is currently playing music
+  • Displays chat name, ID, and username
+  • Only accessible by bot owner
+
+**Note:** Requires music module with PyTgCalls to be properly configured.
+"""
