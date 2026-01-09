@@ -4,7 +4,8 @@ from pyrogram.types import Message
 # ---------------------------------------------------------------------------------
 # Importing 'app' and 'call_py' from your main 'yumeko' file/folder
 # ---------------------------------------------------------------------------------
-from Yumeko import app, call_py  # ✅ Correct (uppercase)
+from Yumeko import app
+from Yumeko.modules.music import call_py  # ✅ Import from music module
 # Direct Owner ID
 OWNER_ID = 6837532865
 
