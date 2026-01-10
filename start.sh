@@ -1,60 +1,91 @@
 #!/bin/bash
 set -e
 
-echo "🚀 HEROKU STARTUP: Initializing RustyPipe Botguard..."
+echo "🚀 Starting Music Bot with RustyPipe Support..."
+echo "================================================"
 
-# Download the botguard binary
+# CRITICAL: The botguard binary URL that actually works
 BOTGUARD_PATH="/app/rustypipe-botguard"
-BOTGUARD_URL="https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-linux-x86_64"
 
-if [ ! -f "$BOTGUARD_PATH" ]; then
-    echo "📥 Downloading rustypipe-botguard..."
-    
-    # Try with curl first
-    if curl -L -f -o "$BOTGUARD_PATH" "$BOTGUARD_URL" --max-time 60 --retry 3; then
-        echo "✅ Downloaded with curl"
-    else
-        # Fallback to wget
-        echo "⚠️  curl failed, trying wget..."
-        if wget -O "$BOTGUARD_PATH" "$BOTGUARD_URL" --timeout=60 --tries=3; then
-            echo "✅ Downloaded with wget"
-        else
-            echo "❌ Both curl and wget failed"
-            echo "⚠️  Bot will run without RustyPipe (shorter lifespan)"
-            # Don't exit, let bot try to run anyway
+# Try multiple sources for the botguard binary
+download_botguard() {
+    # Source 1: Latest GitHub release (most reliable)
+    echo "📥 Trying GitHub releases..."
+    if curl -L -f -o "$BOTGUARD_PATH" \
+        "https://github.com/ytdl-patched/rustypipe-botguard/releases/latest/download/rustypipe-botguard-x86_64-unknown-linux-musl" \
+        --max-time 60 --retry 2 2>/dev/null; then
+        chmod +x "$BOTGUARD_PATH"
+        if "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
+            echo "✅ Downloaded from GitHub (latest)"
+            return 0
         fi
     fi
-else
-    echo "✅ Botguard already exists"
-fi
-
-# Make executable
-if [ -f "$BOTGUARD_PATH" ]; then
-    chmod +x "$BOTGUARD_PATH"
     
-    # Test if it works
-    if "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
-        echo "✅ Botguard is working!"
-    else
-        echo "⚠️  Botguard test failed (may still work)"
+    # Source 2: Specific version from Codeberg
+    echo "📥 Trying Codeberg v0.1.1..."
+    if curl -L -f -o "$BOTGUARD_PATH" \
+        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.1/rustypipe-botguard-x86_64-unknown-linux-musl" \
+        --max-time 60 --retry 2 2>/dev/null; then
+        chmod +x "$BOTGUARD_PATH"
+        if "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
+            echo "✅ Downloaded from Codeberg (v0.1.1)"
+            return 0
+        fi
     fi
     
-    # CRITICAL: Export environment variable
+    # Source 3: Alternative mirror
+    echo "📥 Trying alternative source..."
+    if wget -q -O "$BOTGUARD_PATH" \
+        "https://github.com/ytdl-patched/rustypipe-botguard/releases/download/v0.1.1/rustypipe-botguard-x86_64-unknown-linux-musl" \
+        --timeout=60 --tries=2 2>/dev/null; then
+        chmod +x "$BOTGUARD_PATH"
+        if "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
+            echo "✅ Downloaded from mirror"
+            return 0
+        fi
+    fi
+    
+    echo "❌ All download sources failed"
+    return 1
+}
+
+# Check if botguard already exists and works
+if [ -f "$BOTGUARD_PATH" ]; then
+    if "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
+        echo "✅ Existing botguard is working"
+    else
+        echo "⚠️  Existing botguard is corrupt, re-downloading..."
+        rm -f "$BOTGUARD_PATH"
+        download_botguard || echo "⚠️  Running without botguard"
+    fi
+else
+    echo "📥 Botguard not found, downloading..."
+    download_botguard || echo "⚠️  Running without botguard"
+fi
+
+# Verify final state
+if [ -f "$BOTGUARD_PATH" ] && "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
+    # CRITICAL: Set ALL possible environment variables
     export RUSTYPIPE_BOTGUARD_PATH="$BOTGUARD_PATH"
     export YT_DLP_RUSTYPIPE_BOTGUARD="$BOTGUARD_PATH"
     export RUSTYPIPE_BOTGUARD="$BOTGUARD_PATH"
+    export RUSTYPIPE_BOTGUARD_BINARY="$BOTGUARD_PATH"
     
-    echo "✅ Environment variables set:"
-    echo "   RUSTYPIPE_BOTGUARD_PATH=$RUSTYPIPE_BOTGUARD_PATH"
-    echo "   YT_DLP_RUSTYPIPE_BOTGUARD=$YT_DLP_RUSTYPIPE_BOTGUARD"
-    echo "   RUSTYPIPE_BOTGUARD=$RUSTYPIPE_BOTGUARD"
+    echo ""
+    echo "✅ RustyPipe Botguard Status: WORKING"
+    echo "📂 Path: $BOTGUARD_PATH"
+    echo "🔐 Environment variables set (4 variants)"
+    echo ""
 else
-    echo "⚠️  No botguard binary available"
+    echo ""
+    echo "⚠️  RustyPipe Botguard Status: NOT AVAILABLE"
+    echo "⚠️  Bot will use cookies only (shorter lifespan)"
+    echo "⚠️  Music may fail on some videos"
+    echo ""
 fi
 
-echo ""
-echo "🎵 Starting Music Bot..."
+echo "🎵 Starting Python Bot..."
 echo "================================================"
 
-# Start the bot with environment variables preserved
+# Start bot with environment preserved
 exec python3 -m Yumeko
