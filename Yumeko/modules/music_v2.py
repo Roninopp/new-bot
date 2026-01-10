@@ -1,12 +1,11 @@
 """
-Music Player Module - Part 2: PyTgCalls Integration & Commands
-Handles: Voice chat playback, commands, button callbacks
+Music Player Module - Part 2A: Core Streaming & PyTgCalls
+Handles: Voice chat streaming, monitoring, auto-join, playback control
 """
 
 import asyncio
 import os
-from pyrogram import filters, Client
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram import Client
 from pyrogram.errors import (
     UserAlreadyParticipant, 
     ChatAdminRequired, 
@@ -14,8 +13,8 @@ from pyrogram.errors import (
     RPCError
 )
 from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream, AudioQuality
-from pytgcalls.exceptions import NoActiveGroupCall
+from pytgcalls.types import MediaStream, AudioQuality, StreamAudioEnded
+from pytgcalls.exceptions import NoActiveGroupCall, GroupCallNotFound
 
 # Import from Part 1
 from Yumeko.modules.music import (
@@ -32,8 +31,6 @@ from Yumeko.modules.music import (
 
 from Yumeko import app
 from config import config
-from Yumeko.decorator.save import save
-from Yumeko.decorator.errors import error
 
 # ==========================================
 # 🎵 PYTGCALLS CLIENT
@@ -47,14 +44,15 @@ userbot = Client(
 
 pytgcalls = PyTgCalls(userbot)
 
-# Track monitoring tasks
+# Track monitoring tasks & stream states
 monitoring_tasks = {}
+stream_started = {}  # Track if stream actually started
 
 # ==========================================
 # 🎵 START USERBOT & PYTGCALLS
 # ==========================================
 async def start_music_services():
-    """Start userbot and pytgcalls"""
+    """Start userbot and pytgcalls with proper error handling"""
     try:
         print("🎵 [start_music_services] Starting userbot...")
         await userbot.start()
@@ -63,6 +61,29 @@ async def start_music_services():
         print("🎵 [start_music_services] Starting pytgcalls...")
         await pytgcalls.start()
         print("✅ [start_music_services] PyTgCalls started!")
+        
+        # Register stream ended handler
+        @pytgcalls.on_stream_end()
+        async def on_stream_end(client, update):
+            """Auto-play next song when stream ends naturally"""
+            chat_id = update.chat_id
+            print(f"🎵 [on_stream_end] Stream ended in chat {chat_id}")
+            
+            # Clean up current file
+            if chat_id in current_playing:
+                file_path = current_playing[chat_id].get('file_path')
+                if file_path and os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        print(f"🗑️ [on_stream_end] Deleted: {file_path}")
+                    except Exception as e:
+                        print(f"⚠️ [on_stream_end] Delete failed: {e}")
+            
+            # Play next song
+            await play_next(chat_id, send_message=True, force_skip=False)
+        
+        print("✅ [start_music_services] Stream end handler registered!")
+        
     except Exception as e:
         print(f"❌ [start_music_services] Failed to start: {e}")
 
@@ -71,143 +92,184 @@ loop = asyncio.get_event_loop()
 loop.create_task(start_music_services())
 
 # ==========================================
-# 🎵 AUTO-JOIN GROUP HELPER
+# 🎵 AUTO-JOIN WITH RETRY LOGIC
 # ==========================================
-async def ensure_userbot_in_chat(chat_id: int):
-    """Ensure userbot is in the chat, join if not"""
-    try:
-        # Get userbot info
-        userbot_me = await userbot.get_me()
-        
-        # Check if userbot is already in chat using bot's perspective
+async def ensure_userbot_in_chat(chat_id: int, max_retries: int = 3):
+    """
+    Ensure userbot is in the chat with enhanced retry logic
+    Returns: (success: bool, error_message: str or None)
+    """
+    for attempt in range(max_retries):
         try:
-            await app.get_chat_member(chat_id, userbot_me.id)
-            print(f"✅ [ensure_userbot_in_chat] Already in chat {chat_id}")
-            return True
-        except:
-            pass
-        
-        # Not in chat, need to join
-        print(f"🔄 [ensure_userbot_in_chat] Not in chat, attempting to join...")
-        
-        try:
-            # Get chat info using bot
-            chat = await app.get_chat(chat_id)
+            # Get userbot info
+            userbot_me = await userbot.get_me()
             
-            # Try using existing invite link
-            if hasattr(chat, 'invite_link') and chat.invite_link:
-                print(f"🔗 [ensure_userbot_in_chat] Using existing invite link")
-                await userbot.join_chat(chat.invite_link)
-                await asyncio.sleep(2)
-                return True
-            
-            # Create new invite link
-            print(f"🔗 [ensure_userbot_in_chat] Creating new invite link")
+            # Check if already in chat
             try:
-                invite_link = await app.create_chat_invite_link(chat_id)
-                await userbot.join_chat(invite_link.invite_link)
-                await asyncio.sleep(2)
-                print(f"✅ [ensure_userbot_in_chat] Successfully joined {chat_id}")
-                return True
-            except:
-                # Fallback: export chat invite link
-                invite_link = await app.export_chat_invite_link(chat_id)
-                await userbot.join_chat(invite_link)
-                await asyncio.sleep(2)
-                print(f"✅ [ensure_userbot_in_chat] Successfully joined {chat_id}")
-                return True
+                member = await userbot.get_chat_member(chat_id, userbot_me.id)
+                print(f"✅ [ensure_userbot_in_chat] Already in chat {chat_id}")
                 
-        except UserAlreadyParticipant:
-            print(f"✅ [ensure_userbot_in_chat] Already participant")
-            return True
-        except ChatAdminRequired:
-            print(f"❌ [ensure_userbot_in_chat] Bot needs admin rights to invite")
-            return False
-        except Exception as e:
-            print(f"❌ [ensure_userbot_in_chat] Failed to join: {e}")
-            return False
-            
-    except Exception as e:
-        print(f"❌ [ensure_userbot_in_chat] Error: {e}")
-        return False
-
-# ==========================================
-# 🎵 STREAM MONITOR
-# ==========================================
-async def monitor_stream(chat_id: int, file_path: str, duration: int):
-    """Monitor stream and auto-play next song when finished"""
-    print(f"🎵 [monitor_stream] Started monitoring chat {chat_id} for {duration}s")
-    
-    try:
-        # Wait for song duration + 2 seconds buffer
-        await asyncio.sleep(duration + 2)
-        
-        print(f"🎵 [monitor_stream] Stream ended in {chat_id}")
-        
-        # Clean up current file
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                print(f"🗑️ [monitor_stream] Deleted: {file_path}")
-            except Exception as e:
-                print(f"⚠️ [monitor_stream] Delete failed: {e}")
-        
-        # Play next song (natural end)
-        await play_next(chat_id, force_skip=False)
-        
-    except asyncio.CancelledError:
-        print(f"🎵 [monitor_stream] Monitoring cancelled for {chat_id}")
-        # Clean up on cancel (manual skip/stop)
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except:
+                # Force refresh chat cache to get updated call info
+                await userbot.get_chat(chat_id)
+                await asyncio.sleep(1)
+                return True, None
+            except UserNotParticipant:
                 pass
-    except Exception as e:
-        print(f"❌ [monitor_stream] Error: {e}")
+            
+            # Not in chat, attempt to join
+            print(f"🔄 [ensure_userbot_in_chat] Attempt {attempt + 1}/{max_retries} to join chat {chat_id}")
+            
+            try:
+                # Get chat info
+                chat = await app.get_chat(chat_id)
+                
+                # Try existing invite link
+                if hasattr(chat, 'invite_link') and chat.invite_link:
+                    print(f"🔗 [ensure_userbot_in_chat] Using existing invite link")
+                    await userbot.join_chat(chat.invite_link)
+                    await asyncio.sleep(2)
+                    
+                    # Verify join and refresh cache
+                    await userbot.get_chat(chat_id)
+                    print(f"✅ [ensure_userbot_in_chat] Successfully joined {chat_id}")
+                    return True, None
+                
+                # Create new invite link
+                print(f"🔗 [ensure_userbot_in_chat] Creating new invite link")
+                try:
+                    invite_link = await app.create_chat_invite_link(chat_id)
+                    await userbot.join_chat(invite_link.invite_link)
+                except Exception:
+                    # Fallback to export
+                    invite_link = await app.export_chat_invite_link(chat_id)
+                    await userbot.join_chat(invite_link)
+                
+                await asyncio.sleep(2)
+                
+                # Verify and refresh
+                await userbot.get_chat(chat_id)
+                print(f"✅ [ensure_userbot_in_chat] Successfully joined {chat_id}")
+                return True, None
+                
+            except UserAlreadyParticipant:
+                await userbot.get_chat(chat_id)
+                return True, None
+                
+            except ChatAdminRequired:
+                return False, "Bot needs admin rights to create invite links"
+                
+        except Exception as e:
+            print(f"⚠️ [ensure_userbot_in_chat] Attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2)
+            else:
+                return False, f"Failed after {max_retries} attempts: {str(e)}"
+    
+    return False, "Unknown error"
 
 # ==========================================
-# 🎵 PLAYBACK CONTROL
+# 🎵 DIRECT STREAM FROM URL (Fast Mode)
+# ==========================================
+async def stream_from_url(chat_id: int, url: str, song_info: dict):
+    """
+    Stream directly from URL without downloading (FAST)
+    Falls back to download if streaming fails
+    """
+    try:
+        print(f"⚡ [stream_from_url] Attempting direct stream for {chat_id}")
+        
+        # Try to stream directly
+        await pytgcalls.play(
+            chat_id,
+            MediaStream(
+                url,
+                audio_parameters=AudioQuality.HIGH
+            )
+        )
+        
+        stream_started[chat_id] = True
+        print(f"✅ [stream_from_url] Direct streaming started!")
+        return True, None
+        
+    except Exception as e:
+        print(f"⚠️ [stream_from_url] Direct stream failed: {e}")
+        print(f"🔄 [stream_from_url] Falling back to download mode...")
+        
+        # Download and stream
+        try:
+            audio_data = await download_audio(url)
+            
+            await pytgcalls.play(
+                chat_id,
+                MediaStream(
+                    audio_data['file_path'],
+                    audio_parameters=AudioQuality.HIGH
+                )
+            )
+            
+            stream_started[chat_id] = True
+            song_info['file_path'] = audio_data['file_path']
+            song_info['duration'] = audio_data['duration']
+            print(f"✅ [stream_from_url] Downloaded stream started!")
+            return True, audio_data['file_path']
+            
+        except Exception as download_error:
+            print(f"❌ [stream_from_url] Download stream also failed: {download_error}")
+            return False, str(download_error)
+
+# ==========================================
+# 🎵 ENHANCED PLAY NEXT WITH FIX
 # ==========================================
 async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = False):
-    """Play the next song in queue"""
+    """Play next song with enhanced error handling"""
     print(f"🎵 [play_next] Called for chat {chat_id} (Force Skip: {force_skip})")
     
-    # Manage tasks
+    # Cancel monitoring if force skip
     if force_skip and chat_id in monitoring_tasks:
         try:
             monitoring_tasks[chat_id].cancel()
             del monitoring_tasks[chat_id]
         except Exception:
             pass
-    elif chat_id in monitoring_tasks and not force_skip:
-        del monitoring_tasks[chat_id]
+    
+    # Clean up current playing file
+    if chat_id in current_playing:
+        file_path = current_playing[chat_id].get('file_path')
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                print(f"🗑️ [play_next] Deleted previous file: {file_path}")
+            except Exception as e:
+                print(f"⚠️ [play_next] Failed to delete: {e}")
     
     queue = get_queue(chat_id)
     
     if not queue:
-        print(f"🎵 [play_next] Queue empty, leaving in 3 seconds")
+        print(f"🎵 [play_next] Queue empty, leaving voice chat")
         
         if send_message:
             try:
                 await app.send_message(
                     chat_id,
-                    "👋 **Userbot Left The VC**\n\n"
-                    "No songs or queue left. Use `/play` to start again!"
+                    "👋 **Playback Finished**\n\n"
+                    "Queue is empty. Use `/play` to start again!"
                 )
             except Exception as e:
-                print(f"⚠️ [play_next] Failed to send leave message: {e}")
+                print(f"⚠️ [play_next] Failed to send message: {e}")
         
-        await asyncio.sleep(3)
+        await asyncio.sleep(2)
         
         try:
             await pytgcalls.leave_call(chat_id)
-            print(f"👋 [play_next] Left voice chat")
+            print(f"👋 [play_next] Left voice chat {chat_id}")
         except Exception as e:
-            print(f"⚠️ [play_next] Failed to leave: {e}")
+            print(f"⚠️ [play_next] Leave call error: {e}")
         
+        # Cleanup
         if chat_id in current_playing:
             del current_playing[chat_id]
+        if chat_id in stream_started:
+            del stream_started[chat_id]
         return
     
     # Get next song
@@ -216,472 +278,121 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
     
     print(f"🎵 [play_next] Playing: {next_song['title']}")
     
-    try:
-        await pytgcalls.play(
-            chat_id,
-            MediaStream(
-                next_song['file_path'],
-                audio_parameters=AudioQuality.HIGH
-            )
-        )
-        
-        # Start monitoring for this song
-        task = asyncio.create_task(
-            monitor_stream(chat_id, next_song['file_path'], next_song.get('duration', 180))
-        )
-        monitoring_tasks[chat_id] = task
-        print(f"✅ [play_next] Started playing and monitoring")
-        
-        # Send now playing message
-        if send_message:
-            try:
-                format_type = "MP3" if FFMPEG_AVAILABLE else "M4A"
-                
-                buttons = InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{chat_id}"),
-                        InlineKeyboardButton("⏭ Skip", callback_data=f"skip_{chat_id}"),
-                        InlineKeyboardButton("⏹ Stop", callback_data=f"stop_{chat_id}")
-                    ],
-                    [
-                        InlineKeyboardButton("📋 Queue", callback_data=f"queue_{chat_id}"),
-                        InlineKeyboardButton("❌ Close", callback_data="close")
-                    ]
-                ])
-
-                now_playing = (
-                    f"**▶️ Now Playing ({format_type})**\n\n"
-                    f"🎵 **Title:** {next_song['title']}\n"
-                    f"👤 **Requested by:** {next_song['requester']}\n"
-                    f"⏱️ **Duration:** {next_song['duration'] // 60}:{next_song['duration'] % 60:02d}"
-                )
-                
-                if next_song.get('thumbnail'):
-                     await app.send_photo(
-                        chat_id,
-                        photo=next_song['thumbnail'],
-                        caption=now_playing,
-                        reply_markup=buttons
-                    )
-                else:
-                    await app.send_message(chat_id, now_playing, reply_markup=buttons)
-
-            except Exception as e:
-                print(f"⚠️ [play_next] Failed to send now playing: {e}")
-        
-    except Exception as e:
-        print(f"❌ [play_next] Failed: {e}")
-        
-        # Auto-Refresh Logic for Stale Connections
-        if "GROUPCALL_INVALID" in str(e) or "NoActiveGroupCall" in str(e):
-             try:
-                 print("🔄 [play_next] Stale connection detected. REFRESHING CACHE...")
-                 try:
-                    await pytgcalls.leave_call(chat_id)
-                 except: 
-                    pass
-                 
-                 # IMPORTANT: Force userbot to get chat again to update 'call' info
-                 await userbot.get_chat(chat_id) 
-                 await asyncio.sleep(2)
-                 
-                 await pytgcalls.play(
+    # Try to play with retry logic
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            # Refresh chat cache before playing
+            if attempt > 0:
+                print(f"🔄 [play_next] Refreshing chat cache (attempt {attempt + 1})")
+                await userbot.get_chat(chat_id)
+                await asyncio.sleep(1)
+            
+            # Stream from URL or file
+            if next_song.get('file_path') and os.path.exists(next_song['file_path']):
+                # Already downloaded
+                await pytgcalls.play(
                     chat_id,
                     MediaStream(
                         next_song['file_path'],
                         audio_parameters=AudioQuality.HIGH
                     )
                 )
-             except Exception as retry_e:
-                 print(f"❌ [play_next] Retry failed: {retry_e}")
-                 if os.path.exists(next_song['file_path']):
-                    try: os.remove(next_song['file_path'])
-                    except: pass
-                 # Recurse to try next song if this one failed
-                 await play_next(chat_id, send_message, force_skip=False)
-                 return
-
-        # General error fallback
-        if os.path.exists(next_song['file_path']):
-            try: os.remove(next_song['file_path'])
-            except: pass
-        await play_next(chat_id, send_message, force_skip=False)
-
-# ==========================================
-# 🎵 COMMANDS
-# ==========================================
-@app.on_message(filters.command("play", config.COMMAND_PREFIXES) & filters.group)
-@error
-@save
-async def play_command(client, message: Message):
-    """Main play command"""
-    print(f"\n🎵 [play_command] ========== RECEIVED ==========")
-    print(f"🎵 [play_command] Chat: {message.chat.id}, User: {message.from_user.id}")
-    
-    # Check if query provided
-    if len(message.command) < 2:
-        await message.reply("**Usage:** `/play <song name or URL>`\n\n**Example:** `/play Believer`")
-        return
-    
-    query = message.text.split(maxsplit=1)[1].strip()
-    
-    status_msg = await message.reply(
-        "```\n"
-        "[░░░░░░░░░░] 0%\n"
-        "⏳ Initializing...\n"
-        "```"
-    )
-    
-    try:
-        # Ensure userbot is in chat
-        await status_msg.edit(
-            "```\n"
-            "[█░░░░░░░░░] 10%\n"
-            "🔄 Checking userbot...\n"
-            "```"
-        )
-        
-        if not await ensure_userbot_in_chat(message.chat.id):
-            await status_msg.edit(
-                "❌ **Failed to join chat!**\n\n"
-                "**Possible reasons:**\n"
-                "• Bot needs admin rights to create invite links\n"
-                "• Group has restricted invite settings\n\n"
-                "**Solution:** Manually add the userbot to this group."
-            )
-            return
-        
-        # Search
-        await status_msg.edit(
-            "```\n"
-            "[██░░░░░░░░] 20%\n"
-            "🔍 Searching YouTube...\n"
-            "```"
-        )
-        
-        url = query if is_youtube_url(query) else await search_youtube(query)
-        if not url:
-            await status_msg.edit("❌ **No results found!**")
-            return
-        
-        # Download
-        await status_msg.edit(
-            "```\n"
-            "[████░░░░░░] 40%\n"
-            "⬇️ Downloading audio...\n"
-            "```"
-        )
-        
-        audio_data = await download_audio(url)
-        
-        # Processing
-        await status_msg.edit(
-            "```\n"
-            "[███████░░░] 70%\n"
-            "🎵 Processing...\n"
-            "```"
-        )
-        
-        song_info = {
-            'title': audio_data['title'],
-            'url': url,
-            'file_path': audio_data['file_path'],
-            'duration': audio_data['duration'],
-            'requester': message.from_user.mention,
-            'thumbnail': audio_data.get('thumbnail')
-        }
-        
-        # Check if already playing
-        if message.chat.id in current_playing:
-            add_to_queue(message.chat.id, song_info)
-            position = len(get_queue(message.chat.id))
+                stream_started[chat_id] = True
+            else:
+                # Direct stream
+                success, result = await stream_from_url(chat_id, next_song['url'], next_song)
+                if not success:
+                    raise Exception(result)
             
-            queue_msg = (
-                f"**✅ Queued at #{position}**\n\n"
-                f"🎵 **Title:** {audio_data['title']}\n"
-                f"👤 **Requested by:** {message.from_user.mention}\n"
-                f"⏱️ **Duration:** {audio_data['duration'] // 60}:{audio_data['duration'] % 60:02d}"
-            )
-            await status_msg.edit(queue_msg)
-            print(f"✅ [play_command] Added to queue at position {position}")
-        else:
-            current_playing[message.chat.id] = song_info
+            print(f"✅ [play_next] Successfully started stream")
             
-            # Joining
-            await status_msg.edit(
-                "```\n"
-                "[█████████░] 90%\n"
-                "🎙️ Connecting to voice chat...\n"
-                "```"
-            )
+            # Send now playing message
+            if send_message:
+                await send_now_playing(chat_id, next_song)
             
-            # --- START CONNECTION LOGIC ---
-            connection_success = False
+            break  # Success, exit retry loop
             
-            # Cleanup previous monitoring
-            if message.chat.id in monitoring_tasks:
-                monitoring_tasks[message.chat.id].cancel()
-                del monitoring_tasks[message.chat.id]
-
-            try:
-                # First Attempt
-                await pytgcalls.play(
-                    message.chat.id,
-                    MediaStream(
-                        audio_data['file_path'],
-                        audio_parameters=AudioQuality.HIGH
-                    )
-                )
-                connection_success = True
-                
-            except Exception as e:
-                # Handle GROUPCALL_INVALID or NoActiveGroupCall
-                error_str = str(e)
-                print(f"⚠️ [play_command] First attempt failed: {error_str}")
-                
-                if "GROUPCALL_INVALID" in error_str or "NoActiveGroupCall" in error_str or "call" in error_str.lower():
-                    await status_msg.edit("🔄 **Refetching Voice Chat Info...**")
+        except Exception as e:
+            error_str = str(e)
+            print(f"❌ [play_next] Attempt {attempt + 1} failed: {error_str}")
+            
+            if attempt < max_retries - 1:
+                # Retry on specific errors
+                if any(err in error_str for err in ["GROUPCALL", "NoActiveGroupCall", "call"]):
+                    print(f"🔄 [play_next] Retrying due to call error...")
                     try:
-                        # 1. Leave current stale connection
-                        try:
-                            await pytgcalls.leave_call(message.chat.id)
-                        except:
-                            pass
-                        
-                        # 2. CRITICAL: Force refresh chat info to get NEW call ID
-                        print(f"🔄 [play_command] Refreshing chat cache for {message.chat.id}")
-                        await userbot.get_chat(message.chat.id)
-                        
-                        # 3. Wait for propagation
-                        await asyncio.sleep(2)
-                        
-                        # 4. Retry Play
-                        await pytgcalls.play(
-                            message.chat.id,
-                            MediaStream(
-                                audio_data['file_path'],
-                                audio_parameters=AudioQuality.HIGH
-                            )
-                        )
-                        connection_success = True
-                        print("✅ [play_command] Retry successful!")
-                    except Exception as final_e:
-                        print(f"❌ [play_command] Retry failed: {final_e}")
-                        
-                        if "No active" in str(final_e) or "GROUPCALL" in str(final_e):
-                             await status_msg.edit(
-                                "❌ **No active voice chat!**\n\n"
-                                "Please ensure the voice chat is turned ON and someone is in it."
-                            )
-                        else:
-                             await status_msg.edit(f"❌ **Error:** `{str(final_e)[:100]}`")
-                        
-                        # Cleanup
-                        if message.chat.id in current_playing:
-                            del current_playing[message.chat.id]
-                        if os.path.exists(audio_data['file_path']):
-                            try: os.remove(audio_data['file_path'])
-                            except: pass
-                        return
-                else:
-                    # Other errors (network, ffmpeg, etc)
-                    await status_msg.edit(f"❌ **Error:** `{error_str[:150]}`")
-                    if message.chat.id in current_playing:
-                        del current_playing[message.chat.id]
-                    return
-
-            if connection_success:
-                # Start monitoring for auto-next
-                task = asyncio.create_task(
-                    monitor_stream(message.chat.id, audio_data['file_path'], audio_data['duration'])
-                )
-                monitoring_tasks[message.chat.id] = task
-                
-                print(f"✅ [play_command] Started playing and monitoring!")
-                
-                # Now playing message
-                format_type = "MP3" if FFMPEG_AVAILABLE else "M4A"
-                buttons = InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{message.chat.id}"),
-                        InlineKeyboardButton("⏭ Skip", callback_data=f"skip_{message.chat.id}"),
-                        InlineKeyboardButton("⏹ Stop", callback_data=f"stop_{message.chat.id}")
-                    ],
-                    [
-                        InlineKeyboardButton("📋 Queue", callback_data=f"queue_{message.chat.id}"),
-                        InlineKeyboardButton("❌ Close", callback_data="close")
-                    ]
-                ])
-                
-                now_playing = (
-                    f"**▶️ Now Playing ({format_type})**\n\n"
-                    f"🎵 **Title:** {audio_data['title']}\n"
-                    f"👤 **Requested by:** {message.from_user.mention}\n"
-                    f"⏱️ **Duration:** {audio_data['duration'] // 60}:{audio_data['duration'] % 60:02d}"
-                )
-                
-                if audio_data.get('thumbnail'):
-                    try:
-                        await status_msg.delete()
-                        await message.reply_photo(
-                            audio_data['thumbnail'],
-                            caption=now_playing,
-                            reply_markup=buttons
-                        )
+                        await pytgcalls.leave_call(chat_id)
                     except:
-                        await status_msg.edit(now_playing, reply_markup=buttons)
+                        pass
+                    await asyncio.sleep(2)
                 else:
-                    await status_msg.edit(now_playing, reply_markup=buttons)
+                    break  # Don't retry on other errors
+            else:
+                # Final attempt failed
+                print(f"❌ [play_next] All attempts failed, skipping to next")
                 
-    except Exception as e:
-        error_msg = str(e)
-        print(f"❌ [play_command] Critical Error: {error_msg[:200]}")
-        await status_msg.edit(f"❌ **Critical Error:** `{error_msg[:100]}`")
+                # Clean up failed file
+                if next_song.get('file_path') and os.path.exists(next_song['file_path']):
+                    try:
+                        os.remove(next_song['file_path'])
+                    except:
+                        pass
+                
+                # Try next song recursively
+                if get_queue(chat_id):
+                    await play_next(chat_id, send_message, force_skip=False)
+                return
 
-# Button handlers
-@app.on_callback_query(filters.regex(r"^(pause|skip|stop|queue|close)"))
-async def button_handler(client, query: CallbackQuery):
-    """Handle button callbacks"""
-    action = query.data.split("_")[0]
+async def send_now_playing(chat_id: int, song_info: dict):
+    """Send now playing message with buttons"""
+    from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     
-    if action == "close":
-        await query.message.delete()
-        return
-    
-    chat_id = int(query.data.split("_")[1])
-    
-    if action == "skip":
-        if chat_id in current_playing:
-            await query.answer("⏭️ Skipping...", show_alert=False)
-            await play_next(chat_id, send_message=True, force_skip=True)
+    try:
+        format_type = "MP3" if FFMPEG_AVAILABLE else "M4A"
+        
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{chat_id}"),
+                InlineKeyboardButton("⏭ Skip", callback_data=f"skip_{chat_id}"),
+                InlineKeyboardButton("⏹ Stop", callback_data=f"stop_{chat_id}")
+            ],
+            [
+                InlineKeyboardButton("📋 Queue", callback_data=f"queue_{chat_id}"),
+                InlineKeyboardButton("❌ Close", callback_data="close")
+            ]
+        ])
+
+        now_playing = (
+            f"**▶️ Now Playing ({format_type})**\n\n"
+            f"🎵 **Title:** {song_info['title']}\n"
+            f"👤 **Requested by:** {song_info['requester']}\n"
+            f"⏱️ **Duration:** {song_info.get('duration', 0) // 60}:{song_info.get('duration', 0) % 60:02d}"
+        )
+        
+        if song_info.get('thumbnail'):
+            await app.send_photo(
+                chat_id,
+                photo=song_info['thumbnail'],
+                caption=now_playing,
+                reply_markup=buttons
+            )
         else:
-            await query.answer("❌ Nothing playing!", show_alert=True)
-    
-    elif action == "stop":
-        # Cancel monitoring
-        if chat_id in monitoring_tasks:
-            monitoring_tasks[chat_id].cancel()
-            del monitoring_tasks[chat_id]
-        
-        clear_queue(chat_id)
-        if chat_id in current_playing:
-            del current_playing[chat_id]
-            
-        try:
-            await pytgcalls.leave_call(chat_id)
-        except:
-            pass
-        await query.answer("⏹️ Stopped", show_alert=False)
-        try:
-            await query.message.edit_caption("⏹️ **Playback stopped**")
-        except:
-            await query.message.edit_text("⏹️ **Playback stopped**")
-    
-    elif action == "queue":
-        queue = get_queue(chat_id)
-        if not queue and chat_id not in current_playing:
-            await query.answer("🔭 Queue empty!", show_alert=True)
-            return
-        
-        text = "🎵 **Queue:**\n\n"
-        if chat_id in current_playing:
-            text += f"▶️ {current_playing[chat_id]['title'][:40]}\n\n"
-        
-        for i, song in enumerate(queue, 1):
-            text += f"{i}. {song['title'][:40]}\n"
-        
-        await query.answer(text[:200], show_alert=True)
-    
-    elif action == "pause":
-        try:
-            await pytgcalls.pause_stream(chat_id)
-            await query.answer("⏸️ Paused", show_alert=False)
-        except:
-            await query.answer("❌ Error!", show_alert=True)
+            await app.send_message(chat_id, now_playing, reply_markup=buttons)
 
-@app.on_message(filters.command("stop", config.COMMAND_PREFIXES) & filters.group)
-async def stop_command(client, message):
-    """Stop playback"""
-    # Cancel monitoring
-    if message.chat.id in monitoring_tasks:
-        monitoring_tasks[message.chat.id].cancel()
-        del monitoring_tasks[message.chat.id]
-    
-    clear_queue(message.chat.id)
-    if message.chat.id in current_playing:
-        del current_playing[message.chat.id]
-        
-    try:
-        await pytgcalls.leave_call(message.chat.id)
-    except:
-        pass
-    await message.reply("⏹️ **Stopped**")
-
-@app.on_message(filters.command("skip", config.COMMAND_PREFIXES) & filters.group)
-async def skip_command(client, message):
-    """Skip to next song"""
-    if message.chat.id in current_playing:
-        await message.reply("⏭️ **Skipped!**")
-        await play_next(message.chat.id, send_message=True, force_skip=True)
-    else:
-        await message.reply("❌ **Nothing playing!**")
-
-@app.on_message(filters.command("queue", config.COMMAND_PREFIXES) & filters.group)
-async def queue_command(client, message):
-    """Show queue"""
-    queue = get_queue(message.chat.id)
-    if not queue and message.chat.id not in current_playing:
-        await message.reply("🔭 **Queue is empty!**")
-        return
-    
-    text = "🎵 **Current Queue:**\n\n"
-    if message.chat.id in current_playing:
-        text += f"▶️ **Now:** {current_playing[message.chat.id]['title']}\n\n"
-    
-    for i, song in enumerate(queue, 1):
-        text += f"{i}. {song['title']}\n"
-    
-    await message.reply(text)
-
-@app.on_message(filters.command("pause", config.COMMAND_PREFIXES) & filters.group)
-async def pause_command(client, message):
-    """Pause playback"""
-    try:
-        await pytgcalls.pause_stream(message.chat.id)
-        await message.reply("⏸️ **Paused**")
     except Exception as e:
-        await message.reply(f"❌ {str(e)[:100]}")
+        print(f"⚠️ [send_now_playing] Failed: {e}")
 
-@app.on_message(filters.command("resume", config.COMMAND_PREFIXES) & filters.group)
-async def resume_command(client, message):
-    """Resume playback"""
-    try:
-        await pytgcalls.resume_stream(message.chat.id)
-        await message.reply("▶️ **Resumed**")
-    except Exception as e:
-        await message.reply(f"❌ {str(e)[:100]}")
+# Export functions for command handler
+__all__ = [
+    'userbot',
+    'pytgcalls',
+    'ensure_userbot_in_chat',
+    'stream_from_url',
+    'play_next',
+    'send_now_playing',
+    'monitoring_tasks',
+    'stream_started'
+]
 
-__module__ = "Music"
-__help__ = """
-**🎵 Music Player:**
-
-• `/play <song>` - Play song (name or URL)
-• `/pause` - Pause playback
-• `/resume` - Resume playback  
-• `/skip` - Skip to next
-• `/stop` - Stop and clear queue
-• `/queue` - Show queue
-
-**Features:**
-• Auto-converts to MP3 (192kbps)
-• Queue system with auto-play
-• Interactive controls
-• Auto-cleanup after playback
-• Leaves VC after 3s when queue empty
-• Auto-joins new groups
-• **Auto-Fix** for "No Active Call" errors
-
-**Note:** Voice chat must be active!
-"""
-
-print("✅ Music Player Commands Loaded")
+print("✅ Music Core & Stream Manager Loaded") 
