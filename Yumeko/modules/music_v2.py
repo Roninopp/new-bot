@@ -62,30 +62,35 @@ async def start_music_services():
         await pytgcalls.start()
         print("✅ [start_music_services] PyTgCalls started!")
         
-        # Register stream ended handler
-        @pytgcalls.on_stream_end()
-        async def on_stream_end_handler(client, update):
-            """Auto-play next song when stream ends naturally"""
-            try:
-                chat_id = update.chat_id
-                print(f"🎵 [on_stream_end] Stream ended in chat {chat_id}")
-                
-                # Clean up current file
-                if chat_id in current_playing:
-                    file_path = current_playing[chat_id].get('file_path')
-                    if file_path and os.path.exists(file_path):
-                        try:
-                            os.remove(file_path)
-                            print(f"🗑️ [on_stream_end] Deleted: {file_path}")
-                        except Exception as e:
-                            print(f"⚠️ [on_stream_end] Delete failed: {e}")
-                
-                # Play next song
-                await play_next(chat_id, send_message=True, force_skip=False)
-            except Exception as e:
-                print(f"❌ [on_stream_end] Error: {e}")
-        
-        print("✅ [start_music_services] Stream end handler registered!")
+        # Try to register stream ended handler (if supported)
+        try:
+            @pytgcalls.on_stream_end()
+            async def on_stream_end_handler(client, update):
+                """Auto-play next song when stream ends naturally"""
+                try:
+                    chat_id = update.chat_id
+                    print(f"🎵 [on_stream_end] Stream ended in chat {chat_id}")
+                    
+                    # Clean up current file
+                    if chat_id in current_playing:
+                        file_path = current_playing[chat_id].get('file_path')
+                        if file_path and os.path.exists(file_path):
+                            try:
+                                os.remove(file_path)
+                                print(f"🗑️ [on_stream_end] Deleted: {file_path}")
+                            except Exception as e:
+                                print(f"⚠️ [on_stream_end] Delete failed: {e}")
+                    
+                    # Play next song
+                    await play_next(chat_id, send_message=True, force_skip=False)
+                except Exception as e:
+                    print(f"❌ [on_stream_end] Error: {e}")
+            
+            print("✅ [start_music_services] Stream end handler registered!")
+        except AttributeError:
+            print("⚠️ [start_music_services] on_stream_end not available, will use duration-based monitoring")
+        except Exception as e:
+            print(f"⚠️ [start_music_services] Could not register stream handler: {e}")
         
     except Exception as e:
         print(f"❌ [start_music_services] Failed to start: {e}")
@@ -223,6 +228,30 @@ async def stream_from_url(chat_id: int, url: str, song_info: dict):
 # ==========================================
 # 🎵 ENHANCED PLAY NEXT WITH FIX
 # ==========================================
+async def monitor_stream_duration(chat_id: int, file_path: str, duration: int):
+    """Monitor stream by duration and auto-play next (fallback method)"""
+    try:
+        print(f"⏰ [monitor_stream_duration] Monitoring {chat_id} for {duration}s")
+        await asyncio.sleep(duration + 3)  # Add 3 second buffer
+        
+        print(f"🎵 [monitor_stream_duration] Duration ended for {chat_id}")
+        
+        # Clean up file
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                print(f"🗑️ [monitor_stream_duration] Deleted: {file_path}")
+            except:
+                pass
+        
+        # Play next
+        await play_next(chat_id, send_message=True, force_skip=False)
+        
+    except asyncio.CancelledError:
+        print(f"⏹️ [monitor_stream_duration] Cancelled for {chat_id}")
+    except Exception as e:
+        print(f"❌ [monitor_stream_duration] Error: {e}")
+
 async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = False):
     """Play next song with enhanced error handling"""
     print(f"🎵 [play_next] Called for chat {chat_id} (Force Skip: {force_skip})")
@@ -395,7 +424,8 @@ __all__ = [
     'play_next',
     'send_now_playing',
     'monitoring_tasks',
-    'stream_started'
+    'stream_started',
+    'monitor_stream_duration'
 ]
 
 print("✅ Music Core & Stream Manager Loaded")
