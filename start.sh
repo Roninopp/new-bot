@@ -26,4 +26,4 @@ echo "✅ Botguard Path set to: $RUSTYPIPE_BOTGUARD_PATH"
 
 # 4. Start your bot
 echo "🎵 Starting Music Bot..."
-python3 Yumeko
+python3 -m Yumeko
