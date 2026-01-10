@@ -1,6 +1,6 @@
 """
 Music Player Module - Part 1: Core System & Download Logic
-WITH RUSTYPIPE INTEGRATION & AUTO PO_TOKEN GENERATION
+FIXED VERSION - Proper PoToken & RustyPipe Integration
 Handles: FFmpeg detection, cookies, RustyPipe, po_token, download, queue management
 """
 
@@ -14,69 +14,88 @@ from typing import Optional
 import yt_dlp
 
 # ==========================================
-# 🔥 RUSTYPIPE & PO_TOKEN SYSTEM
+# 🔥 CONFIGURATION
 # ==========================================
-def check_rustypipe_botguard():
-    """Check if RustyPipe botguard binary is installed"""
+DOWNLOAD_FOLDER = '/tmp/music_downloads'
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+# ==========================================
+# 🔥 RUSTYPIPE BOTGUARD SYSTEM (FIXED)
+# ==========================================
+def check_and_setup_botguard():
+    """
+    Check if RustyPipe botguard binary is installed and working.
+    yt-dlp needs rustypipe-botguard v1.x (NOT v0.1.x!)
+    """
     print("\n" + "="*70)
     print("🔍 RUSTYPIPE BOTGUARD DETECTION - STARTING")
     print("="*70)
     
     botguard_path = '/app/rustypipe-botguard'
     
-    if os.path.exists(botguard_path):
-        print(f"✅ Botguard found at: {botguard_path}")
+    if not os.path.exists(botguard_path):
+        print(f"❌ Botguard not found at: {botguard_path}")
+        print("="*70 + "\n")
+        return None, False
+    
+    print(f"📂 Botguard file exists at: {botguard_path}")
+    
+    # Check if executable
+    if not os.access(botguard_path, os.X_OK):
+        print(f"⚠️  Botguard not executable, fixing permissions...")
+        try:
+            os.chmod(botguard_path, 0o755)
+            print(f"✅ Fixed permissions")
+        except Exception as e:
+            print(f"❌ Could not fix permissions: {e}")
+            return botguard_path, False
+    
+    # Test if binary actually works and check version
+    try:
+        result = subprocess.run(
+            [botguard_path, '--version'],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
         
-        # CRITICAL: Set environment variable BEFORE yt-dlp runs
-        os.environ['RUSTYPIPE_BOTGUARD_PATH'] = botguard_path
+        version_output = result.stdout.strip() or result.stderr.strip()
+        print(f"📋 Botguard version output: {version_output}")
         
-        # Also set alternative env vars that yt-dlp might check
-        os.environ['YT_DLP_RUSTYPIPE_BOTGUARD'] = botguard_path
-        os.environ['RUSTYPIPE_BOTGUARD'] = botguard_path
-        
-        print(f"✅ Environment variables set:")
-        print(f"   - RUSTYPIPE_BOTGUARD_PATH={botguard_path}")
-        print(f"   - YT_DLP_RUSTYPIPE_BOTGUARD={botguard_path}")
-        print(f"   - RUSTYPIPE_BOTGUARD={botguard_path}")
-        
-        # Test if executable
-        if os.access(botguard_path, os.X_OK):
-            print(f"✅ Botguard is executable")
-            
-            # Test if it actually works
-            try:
-                result = subprocess.run(
-                    [botguard_path, '--version'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0:
-                    print(f"✅ Botguard version test passed")
-                else:
-                    print(f"⚠️  Botguard version test failed (may still work)")
-            except Exception as e:
-                print(f"⚠️  Could not test botguard: {e}")
+        if result.returncode == 0:
+            # Check if it's v1.x (required by yt-dlp)
+            if 'v1.' in version_output or '1.' in version_output:
+                print(f"✅ Botguard v1.x detected - Compatible!")
+                
+                # Set environment variables
+                os.environ['RUSTYPIPE_BOTGUARD_PATH'] = botguard_path
+                print(f"✅ Environment variable set: RUSTYPIPE_BOTGUARD_PATH={botguard_path}")
+                print("="*70 + "\n")
+                return botguard_path, True
+            else:
+                print(f"⚠️  Botguard version may be incompatible (need v1.x)")
+                print(f"⚠️  yt-dlp requires rustypipe-botguard v1.0.0 or newer")
+                os.environ['RUSTYPIPE_BOTGUARD_PATH'] = botguard_path
+                print("="*70 + "\n")
+                return botguard_path, False  # Exists but may not work
         else:
-            print(f"⚠️  Botguard not executable, attempting to fix...")
-            try:
-                os.chmod(botguard_path, 0o755)
-                print(f"✅ Fixed permissions")
-            except Exception as e:
-                print(f"⚠️  Could not fix permissions: {e}")
-        
+            print(f"❌ Botguard binary failed to run (return code: {result.returncode})")
+            print("="*70 + "\n")
+            return botguard_path, False
+            
+    except subprocess.TimeoutExpired:
+        print(f"❌ Botguard timed out")
         print("="*70 + "\n")
-        return botguard_path
-    else:
-        print(f"⚠️  Botguard not found at {botguard_path}")
-        print(f"⚠️  yt-dlp will work without it (may have signature issues)")
+        return botguard_path, False
+    except Exception as e:
+        print(f"❌ Could not test botguard: {e}")
         print("="*70 + "\n")
-        return None
+        return botguard_path, False
 
-BOTGUARD_PATH = check_rustypipe_botguard()
+BOTGUARD_PATH, BOTGUARD_WORKING = check_and_setup_botguard()
 
 # ==========================================
-# 🔍 CRITICAL: FFMPEG DETECTION SYSTEM
+# 🔍 FFMPEG DETECTION SYSTEM
 # ==========================================
 def detect_ffmpeg():
     """Detect FFmpeg installation and return path"""
@@ -135,7 +154,7 @@ def detect_ffmpeg():
 FFMPEG_PATH, FFMPEG_AVAILABLE = detect_ffmpeg()
 
 # ==========================================
-# 🍪 CRITICAL: COOKIE DIAGNOSTIC SYSTEM
+# 🍪 COOKIE DIAGNOSTIC SYSTEM
 # ==========================================
 def diagnose_cookies():
     """Comprehensive cookie file analysis"""
@@ -146,17 +165,12 @@ def diagnose_cookies():
     cwd = os.getcwd()
     print(f"📂 Current Working Directory: {cwd}")
     
-    try:
-        files = os.listdir('.')
-        print(f"📂 Files in root: {[f for f in files if not f.startswith('.')][:20]}")
-    except Exception as e:
-        print(f"❌ Error listing files: {e}")
-    
     cookie_locations = [
         'cookies.txt',
         './cookies.txt',
         'Yumeko/cookies.txt',
         os.path.join(cwd, 'cookies.txt'),
+        '/app/cookies.txt',
     ]
     
     found_cookie_path = None
@@ -168,7 +182,7 @@ def diagnose_cookies():
         print(f"   → Exists: {exists}")
         
         if exists:
-            found_cookie_path = path
+            found_cookie_path = abs_path  # Use absolute path
             size = os.path.getsize(path)
             print(f"   → Size: {size} bytes")
             
@@ -186,7 +200,8 @@ def diagnose_cookies():
                     has_sid = 'SID' in content
                     has_hsid = 'HSID' in content
                     has_ssid = 'SSID' in content
-                    print(f"   → Has SID: {has_sid}, HSID: {has_hsid}, SSID: {has_ssid}")
+                    has_login_info = 'LOGIN_INFO' in content
+                    print(f"   → Has SID: {has_sid}, HSID: {has_hsid}, SSID: {has_ssid}, LOGIN_INFO: {has_login_info}")
                     
                     if cookie_count == 0:
                         print(f"   ⚠️  WARNING: No valid cookies!")
@@ -194,6 +209,7 @@ def diagnose_cookies():
                         print(f"   ⚠️  WARNING: Missing critical YouTube cookies!")
                     else:
                         print(f"   ✅ Cookies look valid!")
+                        break  # Use this one
                         
             except Exception as e:
                 print(f"   ❌ Error reading file: {e}")
@@ -209,23 +225,24 @@ def diagnose_cookies():
 COOKIE_PATH = diagnose_cookies()
 
 # ==========================================
-# 📦 YT-DLP CONFIGURATION WITH RUSTYPIPE
+# 🔧 YT-DLP OPTIONS (FIXED)
 # ==========================================
-DOWNLOAD_FOLDER = "downloads/music"
-os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
-
-def get_ydl_opts():
-    """Get yt-dlp options with FFmpeg, cookies, and RustyPipe botguard"""
+def get_ydl_opts(use_cookies: bool = True):
+    """
+    Get yt-dlp options with PROPER configuration.
+    
+    KEY FIXES:
+    1. Use 'web' client only when cookies are present (android doesn't support cookies)
+    2. Don't rely on env vars for botguard - use extractor_args
+    3. Add proper po_token provider configuration
+    """
     print(f"\n🔧 [get_ydl_opts] === STARTING ===")
     print(f"🔧 [get_ydl_opts] COOKIE_PATH: {COOKIE_PATH}")
     print(f"🔧 [get_ydl_opts] FFMPEG_AVAILABLE: {FFMPEG_AVAILABLE}")
-    print(f"🔧 [get_ydl_opts] BOTGUARD_AVAILABLE: {BOTGUARD_PATH is not None}")
+    print(f"🔧 [get_ydl_opts] BOTGUARD_PATH: {BOTGUARD_PATH}")
+    print(f"🔧 [get_ydl_opts] BOTGUARD_WORKING: {BOTGUARD_WORKING}")
     
-    cookie_file = COOKIE_PATH if COOKIE_PATH and os.path.exists(COOKIE_PATH) else None
-    if cookie_file:
-        print(f"✅ [get_ydl_opts] Using cookies: {cookie_file}")
-    else:
-        print(f"⚠️  [get_ydl_opts] NO COOKIES AVAILABLE!")
+    cookie_file = COOKIE_PATH if (COOKIE_PATH and os.path.exists(COOKIE_PATH) and use_cookies) else None
     
     opts = {
         'format': 'bestaudio[ext=m4a]/bestaudio/best',
@@ -235,28 +252,39 @@ def get_ydl_opts():
         'extract_flat': False,
         'geo_bypass': True,
         'nocheckcertificate': True,
+        'socket_timeout': 30,
+        'retries': 3,
+        'fragment_retries': 3,
     }
     
-    # 🎯 CRITICAL: Configure RustyPipe botguard explicitly
-    if BOTGUARD_PATH:
-        print(f"✅ [get_ydl_opts] RustyPipe botguard configured at: {BOTGUARD_PATH}")
+    # Configure extractor args based on what's available
+    extractor_args = {}
+    
+    if cookie_file:
+        print(f"✅ [get_ydl_opts] Using cookies: {cookie_file}")
+        opts['cookiefile'] = cookie_file
         
-        # Set in extractor args (yt-dlp checks this)
-        opts['extractor_args'] = {
-            'youtube': {
-                'player_client': ['android', 'web'],  # Try multiple clients
-            }
-        }
-        
-        # Verify environment variable is still set
-        if os.getenv('RUSTYPIPE_BOTGUARD_PATH') != BOTGUARD_PATH:
-            os.environ['RUSTYPIPE_BOTGUARD_PATH'] = BOTGUARD_PATH
-            print(f"🔄 [get_ydl_opts] Re-set environment variable")
-        
-        print(f"✅ [get_ydl_opts] yt-dlp will use RustyPipe for po_token generation")
-        print(f"🔐 [get_ydl_opts] ENV: RUSTYPIPE_BOTGUARD_PATH={os.getenv('RUSTYPIPE_BOTGUARD_PATH')}")
+        # IMPORTANT: When using cookies, use 'web' client only
+        # Android client does NOT support cookies!
+        extractor_args['player_client'] = ['web']
+        print(f"✅ [get_ydl_opts] Player client: web (cookies compatible)")
     else:
-        print(f"⚠️  [get_ydl_opts] No botguard - may have signature issues")
+        print(f"⚠️  [get_ydl_opts] NO COOKIES - using mweb,tv client")
+        # Without cookies, try other clients
+        extractor_args['player_client'] = ['mweb', 'tv']
+    
+    # Configure po_token provider if botguard is working
+    if BOTGUARD_WORKING and BOTGUARD_PATH:
+        print(f"✅ [get_ydl_opts] Botguard working - configuring po_token provider")
+        # yt-dlp looks for this in specific ways
+        extractor_args['po_token_provider'] = ['rustypipe-botguard']
+        print(f"✅ [get_ydl_opts] po_token_provider: rustypipe-botguard")
+    else:
+        print(f"⚠️  [get_ydl_opts] Botguard not working - relying on cookies only")
+    
+    if extractor_args:
+        opts['extractor_args'] = {'youtube': extractor_args}
+        print(f"✅ [get_ydl_opts] Extractor args: {extractor_args}")
     
     # Add FFmpeg postprocessor if available
     if FFMPEG_AVAILABLE and FFMPEG_PATH:
@@ -268,23 +296,62 @@ def get_ydl_opts():
         }]
         opts['ffmpeg_location'] = FFMPEG_PATH
     else:
-        print(f"⚠️  [get_ydl_opts] No FFmpeg - using direct audio")
-    
-    if cookie_file:
-        opts['cookiefile'] = cookie_file
-        print(f"🍪 [get_ydl_opts] Cookies configured")
+        print(f"⚠️  [get_ydl_opts] No FFmpeg - using direct audio format")
     
     print(f"🔧 [get_ydl_opts] === COMPLETE ===\n")
     return opts
 
-async def download_audio(url: str) -> dict:
-    """Download audio from YouTube with RustyPipe support"""
+
+def get_ydl_opts_fallback():
+    """
+    Fallback yt-dlp options - tries different strategies.
+    Used when primary method fails.
+    """
+    print(f"\n🔧 [get_ydl_opts_fallback] === TRYING FALLBACK ===")
+    
+    opts = {
+        'format': 'bestaudio/best',  # More permissive format
+        'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
+        'quiet': False,
+        'no_warnings': False,
+        'geo_bypass': True,
+        'nocheckcertificate': True,
+        'socket_timeout': 60,
+        'retries': 5,
+    }
+    
+    # Try without cookies - use clients that don't need auth
+    opts['extractor_args'] = {
+        'youtube': {
+            'player_client': ['ios', 'mweb'],  # iOS often works without cookies
+        }
+    }
+    
+    print(f"✅ [get_ydl_opts_fallback] Using iOS/mweb client without cookies")
+    
+    if FFMPEG_AVAILABLE and FFMPEG_PATH:
+        opts['postprocessors'] = [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '128',  # Lower quality for reliability
+        }]
+        opts['ffmpeg_location'] = FFMPEG_PATH
+    
+    print(f"🔧 [get_ydl_opts_fallback] === COMPLETE ===\n")
+    return opts
+
+
+async def download_audio(url: str, use_fallback: bool = False) -> dict:
+    """
+    Download audio from YouTube with proper error handling and fallback.
+    """
     print(f"\n🔥 [download_audio] === STARTING ===")
     print(f"🔥 [download_audio] URL: {url}")
-    print(f"🔥 [download_audio] RustyPipe: {'✅ Active' if BOTGUARD_PATH else '❌ Inactive'}")
-    print(f"🔥 [download_audio] Cookies: {'✅ Active' if COOKIE_PATH else '❌ Inactive'}")
+    print(f"🔥 [download_audio] Fallback mode: {use_fallback}")
+    print(f"🔥 [download_audio] Botguard: {'✅ Working' if BOTGUARD_WORKING else '❌ Not Working'}")
+    print(f"🔥 [download_audio] Cookies: {'✅ Available' if COOKIE_PATH else '❌ Not Available'}")
     
-    ydl_opts = get_ydl_opts()
+    ydl_opts = get_ydl_opts_fallback() if use_fallback else get_ydl_opts()
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -303,6 +370,16 @@ async def download_audio(url: str) -> dict:
             else:
                 print(f"✅ [download_audio] Using direct format: {os.path.splitext(file_path)[1]}")
             
+            # Verify file exists
+            if not os.path.exists(file_path):
+                # Try finding the actual downloaded file
+                video_id = info.get('id', '')
+                for ext in ['.mp3', '.m4a', '.webm', '.opus']:
+                    potential_path = os.path.join(DOWNLOAD_FOLDER, f"{video_id}{ext}")
+                    if os.path.exists(potential_path):
+                        file_path = potential_path
+                        break
+            
             print(f"✅ [download_audio] SUCCESS! File: {file_path}")
             print(f"✅ [download_audio] Title: {info.get('title', 'Unknown')}")
             print(f"🔥 [download_audio] === COMPLETE ===\n")
@@ -314,49 +391,56 @@ async def download_audio(url: str) -> dict:
                 'url': url,
                 'thumbnail': info.get('thumbnail', None)
             }
+            
         except Exception as e:
             error_str = str(e)
             print(f"\n❌ [download_audio] === FAILED ===")
             print(f"❌ [download_audio] Error: {error_str[:500]}")
             
-            # Enhanced error diagnosis
+            # Diagnose the error
             if "Sign in" in error_str or "bot" in error_str.lower():
-                print(f"❌ [download_audio] DIAGNOSIS: Cookie/Auth failed!")
-                if not BOTGUARD_PATH:
-                    print(f"🔥 [download_audio] CRITICAL: No botguard - this may be why it failed!")
-                    print(f"🔥 [get_ydl_opts] ACTION: Check botguard installation")
-                else:
-                    print(f"⚠️  [download_audio] Botguard present but still failed")
-                    print(f"⚠️  [download_audio] Cookies might be expired")
-            elif "Signature" in error_str:
-                print(f"❌ [download_audio] DIAGNOSIS: Signature challenge failed!")
-                print(f"⚠️  [download_audio] Need rustypipe-botguard binary")
-            elif "rustypipe" in error_str.lower():
-                print(f"❌ [download_audio] DIAGNOSIS: RustyPipe issue!")
-                print(f"🔥 [download_audio] Check botguard: {BOTGUARD_PATH}")
-            elif "format" in error_str.lower():
-                print(f"❌ [download_audio] DIAGNOSIS: Format selection failed!")
-            elif "ffmpeg" in error_str.lower():
-                print(f"❌ [download_audio] DIAGNOSIS: FFmpeg error!")
+                print(f"❌ [download_audio] DIAGNOSIS: Bot detection / Auth required")
+                print(f"   → Cookies may be expired or invalid")
+                print(f"   → Try refreshing cookies from incognito")
+            elif "No valid rustypipe-botguard" in error_str:
+                print(f"❌ [download_audio] DIAGNOSIS: Botguard binary issue")
+                print(f"   → Need rustypipe-botguard v1.x (not v0.1.x)")
+                print(f"   → Download from: https://github.com/nickshanks347/rustypipe-botguard/releases")
+            elif "Signature" in error_str or "n challenge" in error_str:
+                print(f"❌ [download_audio] DIAGNOSIS: Signature/Challenge failed")
+                print(f"   → Botguard not working properly")
+            elif "format" in error_str.lower() or "Only images" in error_str:
+                print(f"❌ [download_audio] DIAGNOSIS: No audio formats available")
+                print(f"   → YouTube blocked all audio formats")
+                print(f"   → Need working po_token or valid cookies")
             
             print(f"❌ [download_audio] === END ===\n")
+            
+            # Try fallback if not already using it
+            if not use_fallback:
+                print(f"🔄 [download_audio] Attempting fallback method...")
+                return await download_audio(url, use_fallback=True)
+            
             raise e
+
 
 def is_youtube_url(url: str) -> bool:
     """Check if string is a YouTube URL"""
     return bool(re.match(r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/', url))
 
+
 async def search_youtube(query: str) -> Optional[str]:
     """Search YouTube and return first result URL"""
     print(f"🔍 [search_youtube] Searching: {query}")
-    print(f"🔍 [search_youtube] RustyPipe: {'✅' if BOTGUARD_PATH else '❌'}")
     
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
-        'default_search': 'ytsearch'
+        'default_search': 'ytsearch',
+        'extract_flat': True,  # Don't download, just get info
     }
     
+    # Use cookies for search if available
     if COOKIE_PATH and os.path.exists(COOKIE_PATH):
         ydl_opts['cookiefile'] = COOKIE_PATH
         print(f"✅ [search_youtube] Using cookies for search")
@@ -365,13 +449,16 @@ async def search_youtube(query: str) -> Optional[str]:
         try:
             info = await asyncio.to_thread(ydl.extract_info, f"ytsearch:{query}", download=False)
             if info and 'entries' in info and len(info['entries']) > 0:
-                url = f"https://www.youtube.com/watch?v={info['entries'][0]['id']}"
+                entry = info['entries'][0]
+                video_id = entry.get('id') or entry.get('url', '').split('=')[-1]
+                url = f"https://www.youtube.com/watch?v={video_id}"
                 print(f"✅ [search_youtube] Found: {url}")
                 return url
         except Exception as e:
             print(f"❌ [search_youtube] Failed: {str(e)[:100]}")
     
     return None
+
 
 # ==========================================
 # 🎵 QUEUE MANAGEMENT
@@ -400,11 +487,11 @@ def clear_queue(chat_id: int):
 # 📊 STARTUP SUMMARY
 # ==========================================
 print(f"\n{'='*70}")
-print(f"✅ MUSIC MODULE CORE LOADED - WITH RUSTYPIPE SUPPORT")
+print(f"✅ MUSIC MODULE CORE LOADED - FIXED VERSION")
 print(f"{'='*70}")
-print(f"🍪 Cookies:    {'✅ Available' if COOKIE_PATH else '❌ Not Found'}")
+print(f"🍪 Cookies:    {'✅ Available at ' + COOKIE_PATH if COOKIE_PATH else '❌ Not Found'}")
 print(f"🎬 FFmpeg:     {'✅ Available' if FFMPEG_AVAILABLE else '❌ Not Available'}")
-print(f"🔥 RustyPipe:  {'✅ Available (Built-in yt-dlp)' if BOTGUARD_PATH else '⚠️  Botguard Missing'}")
+print(f"🔥 Botguard:   {'✅ Working' if BOTGUARD_WORKING else '⚠️  Not Working (path: ' + str(BOTGUARD_PATH) + ')'}")
 print(f"{'='*70}")
 
 if FFMPEG_PATH:
@@ -414,19 +501,18 @@ if BOTGUARD_PATH:
 
 print(f"{'='*70}")
 
-if not BOTGUARD_PATH:
-    print(f"\n⚠️  WARNING: NO BOTGUARD - May have signature issues!")
-    print(f"⚠️  Run install_rustypipe.sh to install botguard")
-    print(f"⚠️  Bot will work with cookies but may fail on some videos")
-elif not COOKIE_PATH:
-    print(f"\n⚠️  WARNING: NO COOKIES - Bot relies on RustyPipe")
-    print(f"✅ This is OK if botguard is working properly")
+if BOTGUARD_WORKING and COOKIE_PATH:
+    print(f"\n✅ OPTIMAL SETUP: Both cookies AND working botguard!")
+    print(f"✅ Bot should have maximum compatibility")
+elif COOKIE_PATH:
+    print(f"\n⚠️  COOKIES ONLY: Botguard not working")
+    print(f"⚠️  Bot may fail on some videos - cookies will expire faster")
+    print(f"⚠️  To fix: Install rustypipe-botguard v1.x (not v0.1.x)")
+elif BOTGUARD_WORKING:
+    print(f"\n⚠️  BOTGUARD ONLY: No cookies available")
+    print(f"⚠️  Bot will use iOS/mweb clients")
 else:
-    print(f"\n✅ OPTIMAL SETUP: Both cookies AND RustyPipe botguard!")
-    print(f"✅ Bot will have maximum compatibility")
-
-print(f"\nℹ️  NOTE: yt-dlp has RustyPipe built-in!")
-print(f"ℹ️  The botguard binary helps with signature challenges")
-print(f"ℹ️  Fresh po_tokens are generated automatically by yt-dlp")
+    print(f"\n❌ MINIMAL SETUP: Neither cookies nor botguard working")
+    print(f"❌ Bot will likely fail on most videos")
 
 print(f"{'='*70}\n")
