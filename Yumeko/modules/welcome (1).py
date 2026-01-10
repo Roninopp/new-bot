@@ -491,63 +491,72 @@ async def on_new_member_added(c: Client, m: Message):
 
 # Handler 2: Users joining (PRIMARY handler for Supergroups)
 # This handler watches the member list DIRECTLY - works even when service messages are hidden
-# Uses the PROVEN simple check from professional bots
 # NOTE: Bot MUST be an admin to receive chat_member_updated events
 @app.on_chat_member_updated()
 async def on_member_joined_group(c: Client, update: ChatMemberUpdated):
-    # CATCH-ALL LOG
+    # CATCH-ALL LOG - This should ALWAYS print if handler is triggered
     print(f"\n{'='*80}")
-    print(f"[WELCOME CMU] chat_member_updated TRIGGERED")
-    print(f"[WELCOME CMU] Chat ID: {update.chat.id}")
-    print(f"[WELCOME CMU] Chat Type: {update.chat.type}")
-    print(f"[WELCOME CMU] Chat Title: {update.chat.title if hasattr(update.chat, 'title') else 'NO TITLE'}")
-    print(f"[WELCOME CMU] old_chat_member: {update.old_chat_member is not None}")
-    print(f"[WELCOME CMU] new_chat_member: {update.new_chat_member is not None}")
+    print(f"[WELCOME DEBUG CMU] HANDLER TRIGGERED! Received chat_member_updated event")
+    print(f"[WELCOME DEBUG CMU] Raw Chat ID: {update.chat.id}")
+    print(f"[WELCOME DEBUG CMU] Raw Chat Type: {update.chat.type}")
+    print(f"[WELCOME DEBUG CMU] Chat Title: {update.chat.title if hasattr(update.chat, 'title') else 'NO TITLE'}")
+    print(f"[WELCOME DEBUG CMU] Chat Username: {update.chat.username if hasattr(update.chat, 'username') and update.chat.username else 'NO USERNAME (PRIVATE)'}")
     print(f"{'='*80}\n")
     
     # Skip private chats
+    print(f"[WELCOME DEBUG CMU] Checking if private chat...")
     if update.chat.type == ChatType.PRIVATE:
-        print(f"[WELCOME CMU] ❌ REJECTED: Private chat")
+        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Private chat type")
         return
+    else:
+        print(f"[WELCOME DEBUG CMU] ✓ Not a private chat")
     
-    # Only process groups
+    # Process ALL group types
+    print(f"[WELCOME DEBUG CMU] Checking chat type...")
     if update.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL]:
-        print(f"[WELCOME CMU] ❌ REJECTED: Invalid chat type {update.chat.type}")
+        print(f"[WELCOME DEBUG CMU] ❌ REJECTED: Chat type {update.chat.type} not allowed")
         return
+    else:
+        print(f"[WELCOME DEBUG CMU] ✓ Chat type {update.chat.type} is allowed")
     
-    print(f"[WELCOME CMU] ✓ Valid group type")
+    # THE KEY FIX: Simple and reliable check for new user joining
+    # This is how professional bots (Rose, GroupHelp) do it!
+    print(f"[WELCOME DEBUG CMU] Checking join status...")
+    print(f"[WELCOME DEBUG CMU] - old_chat_member exists? {update.old_chat_member is not None}")
+    print(f"[WELCOME DEBUG CMU] - new_chat_member exists? {update.new_chat_member is not None}")
     
-    # THE PROVEN SIMPLE CHECK (from your friend's code)
-    # This is how Rose, GroupHelp, and all major bots detect joins!
     if update.new_chat_member and not update.old_chat_member:
-        print(f"[WELCOME CMU] ✓✓✓ NEW JOIN DETECTED!")
-        print(f"[WELCOME CMU] Logic: new_chat_member EXISTS and old_chat_member is None")
+        print(f"[WELCOME DEBUG CMU] ✓✓✓ THIS IS A NEW JOIN EVENT!")
+        print(f"[WELCOME DEBUG CMU] Logic: new_chat_member exists AND old_chat_member is None")
     else:
         if not update.new_chat_member:
-            print(f"[WELCOME CMU] ❌ REJECTED: new_chat_member is None")
+            print(f"[WELCOME DEBUG CMU] ❌ REJECTED: new_chat_member is None")
         elif update.old_chat_member:
-            print(f"[WELCOME CMU] ❌ REJECTED: old_chat_member exists (status update, not join)")
+            print(f"[WELCOME DEBUG CMU] ❌ REJECTED: old_chat_member exists (not a new join)")
+            print(f"[WELCOME DEBUG CMU] This is likely a: promotion, demotion, or profile update")
         return
     
     # Get the user
     user = update.new_chat_member.user
     
-    print(f"[WELCOME CMU] User: {user.first_name} (ID: {user.id})")
-    print(f"[WELCOME CMU] is_bot: {user.is_bot}")
-    print(f"[WELCOME CMU] is_self: {getattr(user, 'is_self', False)}")
+    print(f"[WELCOME DEBUG CMU] User details:")
+    print(f"[WELCOME DEBUG CMU] - Name: {user.first_name}")
+    print(f"[WELCOME DEBUG CMU] - ID: {user.id}")
+    print(f"[WELCOME DEBUG CMU] - is_bot: {user.is_bot}")
+    print(f"[WELCOME DEBUG CMU] - is_self (bot itself): {user.is_self if hasattr(user, 'is_self') else 'N/A'}")
+    print(f"[WELCOME DEBUG CMU] - Bot's ID: {c.me.id}")
     
-    # Skip bot itself (using is_self like your friend's code)
-    if getattr(user, 'is_self', False) or user.id == c.me.id:
-        print(f"[WELCOME CMU] ❌ SKIPPED: Bot itself")
+    # Skip bot itself
+    if user.id == c.me.id:
+        print(f"[WELCOME DEBUG CMU] ❌ SKIPPED: User is the bot itself")
         return
+    else:
+        print(f"[WELCOME DEBUG CMU] ✓ User is not the bot")
     
-    print(f"[WELCOME CMU] ✓ User is not the bot")
-    print(f"[WELCOME CMU] ✓✓✓ SENDING WELCOME!")
-    
+    print(f"[WELCOME DEBUG CMU] ✓✓✓ ALL CHECKS PASSED - PROCEEDING TO SEND WELCOME!")
+    print(f"[WELCOME DEBUG CMU] Calling send_welcome_message...")
     await send_welcome_message(c, update.chat.id, user, update.chat)
-    
-    print(f"[WELCOME CMU] ✓ Welcome sent successfully!")
-    print(f"[WELCOME CMU] ========== END ==========\n")
+    print(f"[WELCOME DEBUG CMU] Returned from send_welcome_message")
     
     # Check if it's actually a new join
     if old_member or not new_member:
