@@ -1,5 +1,6 @@
 """
 Music Player Module - Part 2A: Core Streaming & PyTgCalls
+FIXED VERSION - Better error handling and streaming
 Handles: Voice chat streaming, monitoring, auto-join, playback control
 """
 
@@ -62,7 +63,7 @@ async def start_music_services():
         await pytgcalls.start()
         print("✅ [start_music_services] PyTgCalls started!")
         
-        # Try to register stream ended handler (if supported)
+        # Try to register stream ended handler
         try:
             @pytgcalls.on_stream_end()
             async def on_stream_end_handler(client, update):
@@ -176,63 +177,104 @@ async def ensure_userbot_in_chat(chat_id: int, max_retries: int = 3):
     return False, "Unknown error"
 
 # ==========================================
-# 🎵 DIRECT STREAM FROM URL (Fast Mode)
+# 🎵 STREAM FROM FILE (RELIABLE METHOD)
 # ==========================================
-async def stream_from_url(chat_id: int, url: str, song_info: dict):
+async def stream_audio(chat_id: int, file_path: str, song_info: dict):
     """
-    Stream directly from URL without downloading (FAST)
-    Falls back to download if streaming fails
+    Stream audio from a local file (most reliable method).
+    Always download first, then stream.
     """
     try:
-        print(f"⚡ [stream_from_url] Attempting direct stream for {chat_id}")
+        print(f"🎵 [stream_audio] Starting stream for {chat_id}")
+        print(f"🎵 [stream_audio] File: {file_path}")
         
-        # Try to stream directly
+        if not os.path.exists(file_path):
+            return False, f"File not found: {file_path}"
+        
         await pytgcalls.play(
             chat_id,
             MediaStream(
-                url,
+                file_path,
                 audio_parameters=AudioQuality.HIGH
             )
         )
         
         stream_started[chat_id] = True
-        print(f"✅ [stream_from_url] Direct streaming started!")
+        print(f"✅ [stream_audio] Stream started successfully!")
         return True, None
         
+    except NoActiveGroupCall as e:
+        print(f"❌ [stream_audio] No active group call: {e}")
+        return False, "No active voice chat! Please start a voice chat first."
     except Exception as e:
-        print(f"⚠️ [stream_from_url] Direct stream failed: {e}")
-        print(f"🔄 [stream_from_url] Falling back to download mode...")
-        
-        # Download and stream
-        try:
-            audio_data = await download_audio(url)
-            
-            await pytgcalls.play(
-                chat_id,
-                MediaStream(
-                    audio_data['file_path'],
-                    audio_parameters=AudioQuality.HIGH
-                )
-            )
-            
-            stream_started[chat_id] = True
-            song_info['file_path'] = audio_data['file_path']
-            song_info['duration'] = audio_data['duration']
-            print(f"✅ [stream_from_url] Downloaded stream started!")
-            return True, audio_data['file_path']
-            
-        except Exception as download_error:
-            print(f"❌ [stream_from_url] Download stream also failed: {download_error}")
-            return False, str(download_error)
+        print(f"❌ [stream_audio] Stream failed: {e}")
+        return False, str(e)
 
 # ==========================================
-# 🎵 ENHANCED PLAY NEXT WITH FIX
+# 🎵 DOWNLOAD AND STREAM (MAIN METHOD)
+# ==========================================
+async def download_and_stream(chat_id: int, url: str, song_info: dict):
+    """
+    Download audio first, then stream it.
+    This is more reliable than direct URL streaming.
+    """
+    try:
+        print(f"📥 [download_and_stream] Downloading: {url}")
+        
+        # Download the audio
+        audio_data = await download_audio(url)
+        
+        if not audio_data or not audio_data.get('file_path'):
+            return False, "Download failed - no file produced"
+        
+        file_path = audio_data['file_path']
+        
+        # Update song info with downloaded data
+        song_info['file_path'] = file_path
+        song_info['duration'] = audio_data.get('duration', song_info.get('duration', 180))
+        song_info['title'] = audio_data.get('title', song_info.get('title', 'Unknown'))
+        song_info['thumbnail'] = audio_data.get('thumbnail', song_info.get('thumbnail'))
+        
+        print(f"✅ [download_and_stream] Downloaded: {file_path}")
+        
+        # Now stream the file
+        success, error = await stream_audio(chat_id, file_path, song_info)
+        
+        if success:
+            return True, file_path
+        else:
+            # Clean up file on failure
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except:
+                    pass
+            return False, error
+            
+    except Exception as e:
+        print(f"❌ [download_and_stream] Failed: {e}")
+        return False, str(e)
+
+# ==========================================
+# 🎵 LEGACY: STREAM FROM URL (KEPT FOR COMPATIBILITY)
+# ==========================================
+async def stream_from_url(chat_id: int, url: str, song_info: dict):
+    """
+    Stream from URL - now just calls download_and_stream.
+    Direct URL streaming is unreliable with YouTube.
+    """
+    return await download_and_stream(chat_id, song_info.get('url', url), song_info)
+
+# ==========================================
+# 🎵 DURATION MONITORING
 # ==========================================
 async def monitor_stream_duration(chat_id: int, file_path: str, duration: int):
     """Monitor stream by duration and auto-play next (fallback method)"""
     try:
-        print(f"⏰ [monitor_stream_duration] Monitoring {chat_id} for {duration}s")
-        await asyncio.sleep(duration + 3)  # Add 3 second buffer
+        # Add buffer for network delays
+        wait_time = duration + 5
+        print(f"⏰ [monitor_stream_duration] Monitoring {chat_id} for {wait_time}s")
+        await asyncio.sleep(wait_time)
         
         print(f"🎵 [monitor_stream_duration] Duration ended for {chat_id}")
         
@@ -252,6 +294,9 @@ async def monitor_stream_duration(chat_id: int, file_path: str, duration: int):
     except Exception as e:
         print(f"❌ [monitor_stream_duration] Error: {e}")
 
+# ==========================================
+# 🎵 PLAY NEXT
+# ==========================================
 async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = False):
     """Play next song with enhanced error handling"""
     print(f"🎵 [play_next] Called for chat {chat_id} (Force Skip: {force_skip})")
@@ -318,32 +363,29 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
             if attempt > 0:
                 print(f"🔄 [play_next] Refreshing chat cache (attempt {attempt + 1})")
                 await userbot.get_chat(chat_id)
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)
             
-            # Stream from URL or file
-            if next_song.get('file_path') and os.path.exists(next_song['file_path']):
-                # Already downloaded
-                await pytgcalls.play(
-                    chat_id,
-                    MediaStream(
-                        next_song['file_path'],
-                        audio_parameters=AudioQuality.HIGH
+            # Always download and stream (most reliable)
+            success, result = await download_and_stream(chat_id, next_song['url'], next_song)
+            
+            if success:
+                print(f"✅ [play_next] Successfully started stream")
+                
+                # Start duration monitoring
+                duration = next_song.get('duration', 180)
+                if duration > 0:
+                    task = asyncio.create_task(
+                        monitor_stream_duration(chat_id, next_song.get('file_path'), duration)
                     )
-                )
-                stream_started[chat_id] = True
+                    monitoring_tasks[chat_id] = task
+                
+                # Send now playing message
+                if send_message:
+                    await send_now_playing(chat_id, next_song)
+                
+                return  # Success!
             else:
-                # Direct stream
-                success, result = await stream_from_url(chat_id, next_song['url'], next_song)
-                if not success:
-                    raise Exception(result)
-            
-            print(f"✅ [play_next] Successfully started stream")
-            
-            # Send now playing message
-            if send_message:
-                await send_now_playing(chat_id, next_song)
-            
-            break  # Success, exit retry loop
+                raise Exception(result)
             
         except Exception as e:
             error_str = str(e)
@@ -351,18 +393,30 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
             
             if attempt < max_retries - 1:
                 # Retry on specific errors
-                if any(err in error_str for err in ["GROUPCALL", "NoActiveGroupCall", "call"]):
+                if any(err in error_str.lower() for err in ["groupcall", "noactivegroupcall", "call"]):
                     print(f"🔄 [play_next] Retrying due to call error...")
                     try:
                         await pytgcalls.leave_call(chat_id)
                     except:
                         pass
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(3)
                 else:
-                    break  # Don't retry on other errors
+                    await asyncio.sleep(2)
             else:
                 # Final attempt failed
                 print(f"❌ [play_next] All attempts failed, skipping to next")
+                
+                # Send error message
+                if send_message:
+                    try:
+                        await app.send_message(
+                            chat_id,
+                            f"❌ **Failed to play:** {next_song['title'][:50]}\n\n"
+                            f"Error: {error_str[:100]}\n\n"
+                            "Trying next song..."
+                        )
+                    except:
+                        pass
                 
                 # Clean up failed file
                 if next_song.get('file_path') and os.path.exists(next_song['file_path']):
@@ -373,15 +427,20 @@ async def play_next(chat_id: int, send_message: bool = True, force_skip: bool = 
                 
                 # Try next song recursively
                 if get_queue(chat_id):
+                    await asyncio.sleep(1)
                     await play_next(chat_id, send_message, force_skip=False)
                 return
 
+# ==========================================
+# 🎵 SEND NOW PLAYING MESSAGE
+# ==========================================
 async def send_now_playing(chat_id: int, song_info: dict):
     """Send now playing message with buttons"""
     from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     
     try:
         format_type = "MP3" if FFMPEG_AVAILABLE else "M4A"
+        duration = song_info.get('duration', 0)
         
         buttons = InlineKeyboardMarkup([
             [
@@ -398,19 +457,24 @@ async def send_now_playing(chat_id: int, song_info: dict):
         now_playing = (
             f"**▶️ Now Playing ({format_type})**\n\n"
             f"🎵 **Title:** {song_info['title']}\n"
-            f"👤 **Requested by:** {song_info['requester']}\n"
-            f"⏱️ **Duration:** {song_info.get('duration', 0) // 60}:{song_info.get('duration', 0) % 60:02d}"
+            f"👤 **Requested by:** {song_info.get('requester', 'Unknown')}\n"
+            f"⏱️ **Duration:** {duration // 60}:{duration % 60:02d}"
         )
         
         if song_info.get('thumbnail'):
-            await app.send_photo(
-                chat_id,
-                photo=song_info['thumbnail'],
-                caption=now_playing,
-                reply_markup=buttons
-            )
-        else:
-            await app.send_message(chat_id, now_playing, reply_markup=buttons)
+            try:
+                await app.send_photo(
+                    chat_id,
+                    photo=song_info['thumbnail'],
+                    caption=now_playing,
+                    reply_markup=buttons
+                )
+                return
+            except Exception as e:
+                print(f"⚠️ [send_now_playing] Photo send failed: {e}")
+        
+        # Fallback to text message
+        await app.send_message(chat_id, now_playing, reply_markup=buttons)
 
     except Exception as e:
         print(f"⚠️ [send_now_playing] Failed: {e}")
@@ -421,6 +485,8 @@ __all__ = [
     'pytgcalls',
     'ensure_userbot_in_chat',
     'stream_from_url',
+    'stream_audio',
+    'download_and_stream',
     'play_next',
     'send_now_playing',
     'monitoring_tasks',
@@ -428,4 +494,4 @@ __all__ = [
     'monitor_stream_duration'
 ]
 
-print("✅ Music Core & Stream Manager Loaded")
+print("✅ Music Core & Stream Manager Loaded (FIXED VERSION)")
