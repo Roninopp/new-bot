@@ -13,7 +13,7 @@ from pyrogram.errors import (
     RPCError
 )
 from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream, AudioQuality, StreamAudioEnded
+from pytgcalls.types import MediaStream, AudioQuality
 from pytgcalls.exceptions import NoActiveGroupCall, GroupCallNotFound
 
 # Import from Part 1
@@ -64,23 +64,26 @@ async def start_music_services():
         
         # Register stream ended handler
         @pytgcalls.on_stream_end()
-        async def on_stream_end(client, update):
+        async def on_stream_end_handler(client, update):
             """Auto-play next song when stream ends naturally"""
-            chat_id = update.chat_id
-            print(f"🎵 [on_stream_end] Stream ended in chat {chat_id}")
-            
-            # Clean up current file
-            if chat_id in current_playing:
-                file_path = current_playing[chat_id].get('file_path')
-                if file_path and os.path.exists(file_path):
-                    try:
-                        os.remove(file_path)
-                        print(f"🗑️ [on_stream_end] Deleted: {file_path}")
-                    except Exception as e:
-                        print(f"⚠️ [on_stream_end] Delete failed: {e}")
-            
-            # Play next song
-            await play_next(chat_id, send_message=True, force_skip=False)
+            try:
+                chat_id = update.chat_id
+                print(f"🎵 [on_stream_end] Stream ended in chat {chat_id}")
+                
+                # Clean up current file
+                if chat_id in current_playing:
+                    file_path = current_playing[chat_id].get('file_path')
+                    if file_path and os.path.exists(file_path):
+                        try:
+                            os.remove(file_path)
+                            print(f"🗑️ [on_stream_end] Deleted: {file_path}")
+                        except Exception as e:
+                            print(f"⚠️ [on_stream_end] Delete failed: {e}")
+                
+                # Play next song
+                await play_next(chat_id, send_message=True, force_skip=False)
+            except Exception as e:
+                print(f"❌ [on_stream_end] Error: {e}")
         
         print("✅ [start_music_services] Stream end handler registered!")
         
@@ -395,4 +398,4 @@ __all__ = [
     'stream_started'
 ]
 
-print("✅ Music Core & Stream Manager Loaded") 
+print("✅ Music Core & Stream Manager Loaded")
