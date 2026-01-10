@@ -2,44 +2,40 @@
 
 echo "🚀 HEROKU STARTUP: Initializing RustyPipe..."
 
-# Define file path
-BP="rustypipe-botguard"
+# Use Python to download the binary (More reliable than curl/wget)
+python3 -c "
+import requests
+import os
+import sys
 
-# 1. Clean up potential bad downloads from previous failed runs
-rm -f $BP
+url = 'https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-linux-x86_64'
+output = 'rustypipe-botguard'
 
-# 2. Download from Codeberg (Primary) - Using -L for redirects and User-Agent to avoid blocks
-echo "📥 Downloading RustyPipe Botguard (Primary)..."
-curl -L -A "Mozilla/5.0" -o $BP "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-linux-x86_64"
+print(f'📥 Downloading from {url}...')
+try:
+    response = requests.get(url, timeout=30, allow_redirects=True)
+    response.raise_for_status()
+    
+    with open(output, 'wb') as f:
+        f.write(response.content)
+    
+    # Make executable
+    os.chmod(output, 0o755)
+    print('✅ Download successful!')
+except Exception as e:
+    print(f'❌ Download failed: {e}')
+    sys.exit(1)
+"
 
-# 3. Validation: Check if file is a valid binary
-# We check if the file exists AND if it can print its version
-chmod +x $BP
-if ./$BP --version > /dev/null 2>&1; then
-    echo "✅ RustyPipe Binary is valid!"
-    ./$BP --version
+# Validation: Check if it works
+if ./rustypipe-botguard --version; then
+    echo "✅ Binary is valid and executable!"
+    export RUSTYPIPE_BOTGUARD_PATH="$(pwd)/rustypipe-botguard"
+    echo "✅ Environment set: $RUSTYPIPE_BOTGUARD_PATH"
 else
-    echo "⚠️ Primary download failed or invalid. Trying fallback..."
-    rm -f $BP
-    
-    # Fallback to GitHub
-    echo "📥 Downloading RustyPipe Botguard (Fallback)..."
-    curl -L -A "Mozilla/5.0" -o $BP "https://github.com/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-linux-x86_64"
-    
-    chmod +x $BP
-    if ./$BP --version > /dev/null 2>&1; then
-        echo "✅ Fallback Binary is valid!"
-    else
-        echo "❌ CRITICAL: Could not download a valid RustyPipe binary."
-        echo "⚠️ The bot will run, but music playback might fail."
-    fi
+    echo "❌ CRITICAL: The downloaded binary is corrupt or invalid."
+    # Don't exit, try to run the bot anyway just in case
 fi
 
-# 4. Export the path (Crucial step)
-export RUSTYPIPE_BOTGUARD_PATH="$(pwd)/$BP"
-
-echo "✅ Environment set: $RUSTYPIPE_BOTGUARD_PATH"
-
-# 5. Start your bot
 echo "🎵 Starting Music Bot..."
 python3 -m Yumeko
