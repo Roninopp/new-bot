@@ -1,72 +1,57 @@
 #!/bin/bash
-set -e
+# Simple script - RustyPipe support is built into yt-dlp
+# We just need to install the botguard binary
 
-echo "🔥 Installing RustyPipe for auto po_token generation..."
+echo "🔥 Setting up YouTube access with RustyPipe support..."
 
-# Check if rustypipe already exists
-if [ -f "/app/rustypipe/target/release/rustypipe" ]; then
-    echo "✅ RustyPipe already installed, testing..."
-    /app/rustypipe/target/release/rustypipe --version && {
-        echo "✅ RustyPipe working! Skipping reinstall."
-        exit 0
+# Install rustypipe-botguard binary for yt-dlp
+echo "📥 Installing rustypipe-botguard..."
+cd /app
+
+# Download botguard
+wget -q https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v1.0.0/rustypipe-botguard-linux-x86_64 -O rustypipe-botguard 2>/dev/null || {
+    echo "⚠️  Primary download failed, trying mirror..."
+    wget -q https://github.com/ThetaDev/rustypipe-botguard/releases/download/v1.0.0/rustypipe-botguard-linux-x86_64 -O rustypipe-botguard 2>/dev/null || {
+        echo "⚠️  Botguard download failed (yt-dlp will work without it)"
+        echo "⚠️  Bot will use cookies only"
+        exit 0  # Don't fail, just warn
     }
-fi
-
-# Install Rust if not present
-if ! command -v cargo &> /dev/null; then
-    echo "📦 Installing Rust..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source $HOME/.cargo/env
-    echo "✅ Rust installed!"
-else
-    echo "✅ Rust already installed"
-    source $HOME/.cargo/env || true
-fi
-
-# Clone RustyPipe if not present
-if [ ! -d "/app/rustypipe" ]; then
-    echo "📥 Cloning RustyPipe repository..."
-    cd /app
-    git clone https://github.com/2bc4/rustypipe.git || {
-        echo "⚠️  Git clone failed, trying alternative..."
-        wget https://github.com/2bc4/rustypipe/archive/refs/heads/main.zip
-        unzip main.zip
-        mv rustypipe-main rustypipe
-    }
-    echo "✅ RustyPipe repository ready"
-else
-    echo "✅ RustyPipe repository already exists"
-fi
-
-# Build RustyPipe
-echo "🔨 Building RustyPipe (this may take 2-3 minutes)..."
-cd /app/rustypipe
-cargo build --release --features youtube || {
-    echo "❌ Build failed! Trying without features..."
-    cargo build --release
 }
 
-# Verify build
-if [ -f "/app/rustypipe/target/release/rustypipe" ]; then
-    echo "✅ RustyPipe built successfully!"
+if [ -f "/app/rustypipe-botguard" ]; then
+    chmod +x rustypipe-botguard
+    echo "✅ Botguard installed at /app/rustypipe-botguard"
     
-    # Test it
-    /app/rustypipe/target/release/rustypipe --version && {
-        echo "✅ RustyPipe is working!"
-    } || {
-        echo "⚠️  RustyPipe binary exists but test failed"
-    }
+    # Set environment variable for yt-dlp
+    export RUSTYPIPE_BOTGUARD_PATH="/app/rustypipe-botguard"
+    echo "export RUSTYPIPE_BOTGUARD_PATH='/app/rustypipe-botguard'" >> ~/.profile 2>/dev/null || true
     
-    # Try to generate a po_token
-    echo "🎯 Testing po_token generation..."
-    /app/rustypipe/target/release/rustypipe generate-po-token && {
-        echo "✅ PO_TOKEN generation working!"
+    # Test if it works
+    ./rustypipe-botguard --help >/dev/null 2>&1 && {
+        echo "✅ Botguard is executable and working!"
     } || {
-        echo "⚠️  PO_TOKEN generation test failed (may work during runtime)"
+        echo "⚠️  Botguard may not work on this system"
     }
 else
-    echo "❌ RustyPipe build failed!"
-    exit 1
+    echo "⚠️  Botguard not available"
 fi
 
-echo "✅ RustyPipe installation complete!"
+echo "✅ Setup complete!"
+echo ""
+echo "📊 Status:"
+if [ -f "/app/rustypipe-botguard" ]; then
+    echo "  • RustyPipe Botguard: ✅ Installed"
+    echo "  • Location: /app/rustypipe-botguard"
+else
+    echo "  • RustyPipe Botguard: ⚠️  Not installed"
+fi
+
+if [ -f "/app/cookies.txt" ]; then
+    echo "  • Cookies: ✅ Available"
+else
+    echo "  • Cookies: ⚠️  Not found"
+fi
+
+echo ""
+echo "ℹ️  Note: yt-dlp has RustyPipe support built-in!"
+echo "ℹ️  The botguard binary helps with signature challenges"
