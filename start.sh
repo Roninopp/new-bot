@@ -6,88 +6,99 @@ echo "================================================"
 
 BOTGUARD_PATH="/app/rustypipe-botguard"
 
-# Function to download and verify botguard
+# Function to download and extract botguard
 download_botguard() {
     echo "📥 Downloading rustypipe-botguard..."
     
-    # CRITICAL: We need v1.x for yt-dlp compatibility
-    # The v0.1.x versions from Codeberg are INCOMPATIBLE
+    # The Codeberg releases are .tar.xz files, we need to extract them
+    TEMP_DIR="/tmp/botguard_download"
+    mkdir -p "$TEMP_DIR"
     
-    # Source 1: nickshanks347 fork (v1.x compatible)
-    echo "📥 Trying nickshanks347 release (v1.x)..."
-    if curl -L -f -o "$BOTGUARD_PATH" \
-        "https://github.com/nickshanks347/rustypipe-botguard/releases/download/v1.0.1/rustypipe-botguard-x86_64-unknown-linux-musl" \
+    # Source 1: Codeberg v0.1.2 (latest stable)
+    echo "📥 Trying Codeberg v0.1.2 (tar.xz)..."
+    if curl -L -f -o "$TEMP_DIR/botguard.tar.xz" \
+        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz" \
         --max-time 120 --retry 3 2>/dev/null; then
-        chmod +x "$BOTGUARD_PATH"
-        if "$BOTGUARD_PATH" --version 2>&1 | grep -q "1\."; then
-            echo "✅ Downloaded v1.x from nickshanks347"
-            return 0
+        
+        echo "📦 Extracting..."
+        cd "$TEMP_DIR"
+        if tar -xJf botguard.tar.xz 2>/dev/null; then
+            # Find the binary
+            EXTRACTED_BIN=$(find . -name "rustypipe-botguard" -type f 2>/dev/null | head -1)
+            if [ -n "$EXTRACTED_BIN" ]; then
+                mv "$EXTRACTED_BIN" "$BOTGUARD_PATH"
+                chmod +x "$BOTGUARD_PATH"
+                if "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
+                    echo "✅ Downloaded and extracted from Codeberg v0.1.2"
+                    rm -rf "$TEMP_DIR"
+                    return 0
+                fi
+            fi
         fi
     fi
     
-    # Source 2: ytdl-patched fork
-    echo "📥 Trying ytdl-patched release..."
-    if curl -L -f -o "$BOTGUARD_PATH" \
-        "https://github.com/nickshanks347/rustypipe-botguard/releases/latest/download/rustypipe-botguard-x86_64-unknown-linux-musl" \
+    # Source 2: Try v0.1.1
+    echo "📥 Trying Codeberg v0.1.1 (tar.xz)..."
+    if curl -L -f -o "$TEMP_DIR/botguard.tar.xz" \
+        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.1/rustypipe-botguard-v0.1.1-x86_64-unknown-linux-gnu.tar.xz" \
         --max-time 120 --retry 3 2>/dev/null; then
-        chmod +x "$BOTGUARD_PATH"
-        if "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
-            echo "✅ Downloaded from ytdl-patched"
-            return 0
+        
+        echo "📦 Extracting..."
+        cd "$TEMP_DIR"
+        if tar -xJf botguard.tar.xz 2>/dev/null; then
+            EXTRACTED_BIN=$(find . -name "rustypipe-botguard" -type f 2>/dev/null | head -1)
+            if [ -n "$EXTRACTED_BIN" ]; then
+                mv "$EXTRACTED_BIN" "$BOTGUARD_PATH"
+                chmod +x "$BOTGUARD_PATH"
+                if "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
+                    echo "✅ Downloaded and extracted from Codeberg v0.1.1"
+                    rm -rf "$TEMP_DIR"
+                    return 0
+                fi
+            fi
         fi
     fi
     
-    # Source 3: Try glibc version instead of musl
-    echo "📥 Trying glibc version..."
-    if curl -L -f -o "$BOTGUARD_PATH" \
-        "https://github.com/nickshanks347/rustypipe-botguard/releases/download/v1.0.1/rustypipe-botguard-x86_64-unknown-linux-gnu" \
-        --max-time 120 --retry 3 2>/dev/null; then
-        chmod +x "$BOTGUARD_PATH"
-        if "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
-            echo "✅ Downloaded glibc version"
-            return 0
-        fi
-    fi
-    
+    rm -rf "$TEMP_DIR"
     echo "❌ All download sources failed"
     return 1
 }
 
-# Function to verify botguard is working and compatible
+# Function to verify botguard
 verify_botguard() {
     if [ ! -f "$BOTGUARD_PATH" ]; then
         return 1
     fi
     
-    if [ ! -x "$BOTGUARD_PATH" ]; then
-        chmod +x "$BOTGUARD_PATH" 2>/dev/null || return 1
-    fi
+    chmod +x "$BOTGUARD_PATH" 2>/dev/null || true
     
-    # Test if it runs
     if ! "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
         return 1
     fi
     
-    # Check version (we need v1.x)
     VERSION=$("$BOTGUARD_PATH" --version 2>&1 || echo "unknown")
     echo "📋 Botguard version: $VERSION"
+    return 0
+}
+
+# Install yt-dlp plugin for PO token generation
+install_pot_plugin() {
+    echo ""
+    echo "📦 Installing yt-dlp PO Token plugin..."
     
-    if echo "$VERSION" | grep -q "v1\." || echo "$VERSION" | grep -q "1\."; then
-        echo "✅ Version is compatible (v1.x)"
+    # Install the official yt-dlp plugin for rustypipe-botguard
+    if pip install yt-dlp-get-pot-rustypipe --break-system-packages -q 2>/dev/null; then
+        echo "✅ yt-dlp-get-pot-rustypipe plugin installed"
         return 0
-    elif echo "$VERSION" | grep -q "v0\."; then
-        echo "⚠️  Version v0.x detected - may not work with yt-dlp"
-        echo "⚠️  yt-dlp requires rustypipe-botguard v1.x"
+    else
+        echo "⚠️  Could not install PO Token plugin"
         return 1
     fi
-    
-    # Unknown version, try anyway
-    return 0
 }
 
 # Main logic
 echo ""
-echo "🔍 Checking existing botguard..."
+echo "🔍 Step 1: Checking existing botguard..."
 
 if verify_botguard; then
     echo "✅ Existing botguard is working!"
@@ -106,9 +117,22 @@ else
     fi
 fi
 
+# Install the PO Token plugin
+echo ""
+echo "🔍 Step 2: Installing PO Token plugin..."
+install_pot_plugin || true
+
+# Update yt-dlp to latest
+echo ""
+echo "🔍 Step 3: Updating yt-dlp..."
+pip install -U yt-dlp --break-system-packages -q 2>/dev/null && echo "✅ yt-dlp updated" || echo "⚠️  Could not update yt-dlp"
+
 # Final status
 echo ""
 echo "================================================"
+echo "📊 FINAL STATUS:"
+echo "================================================"
+
 if [ -f "$BOTGUARD_PATH" ] && [ -x "$BOTGUARD_PATH" ]; then
     # Set environment variables
     export RUSTYPIPE_BOTGUARD_PATH="$BOTGUARD_PATH"
@@ -117,28 +141,34 @@ if [ -f "$BOTGUARD_PATH" ] && [ -x "$BOTGUARD_PATH" ]; then
     export RUSTYPIPE_BOTGUARD_BINARY="$BOTGUARD_PATH"
     
     echo "✅ RustyPipe Botguard: READY"
-    echo "📂 Path: $BOTGUARD_PATH"
-    echo "🔧 Environment variables set"
-    
-    # Show version
+    echo "   📂 Path: $BOTGUARD_PATH"
     VERSION=$("$BOTGUARD_PATH" --version 2>&1 || echo "unknown")
-    echo "📋 Version: $VERSION"
+    echo "   📋 Version: $VERSION"
 else
     echo "⚠️  RustyPipe Botguard: NOT AVAILABLE"
-    echo "⚠️  Bot will rely on cookies only"
-    echo "⚠️  This may cause faster cookie expiration"
+    echo "   ⚠️  Bot will rely on cookies only"
 fi
-echo "================================================"
-echo ""
 
-# Verify cookies exist
+# Check cookies
 if [ -f "/app/cookies.txt" ]; then
-    COOKIE_SIZE=$(stat -f%z "/app/cookies.txt" 2>/dev/null || stat -c%s "/app/cookies.txt" 2>/dev/null || echo "0")
-    echo "🍪 Cookies: Found (/app/cookies.txt, ${COOKIE_SIZE} bytes)"
+    COOKIE_SIZE=$(stat -c%s "/app/cookies.txt" 2>/dev/null || echo "0")
+    echo "✅ Cookies: Found (/app/cookies.txt, ${COOKIE_SIZE} bytes)"
 else
     echo "⚠️  Cookies: NOT FOUND"
-    echo "⚠️  Music playback will likely fail without cookies"
 fi
+
+# Check yt-dlp version
+YT_DLP_VERSION=$(yt-dlp --version 2>/dev/null || echo "unknown")
+echo "✅ yt-dlp version: $YT_DLP_VERSION"
+
+# Check if plugin is installed
+if pip show yt-dlp-get-pot-rustypipe >/dev/null 2>&1; then
+    echo "✅ PO Token plugin: Installed"
+else
+    echo "⚠️  PO Token plugin: Not installed"
+fi
+
+echo "================================================"
 echo ""
 
 echo "🎵 Starting Python Bot..."
