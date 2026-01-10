@@ -27,13 +27,36 @@ def check_rustypipe_botguard():
     if os.path.exists(botguard_path):
         print(f"✅ Botguard found at: {botguard_path}")
         
-        # Set environment variable for yt-dlp
+        # CRITICAL: Set environment variable BEFORE yt-dlp runs
         os.environ['RUSTYPIPE_BOTGUARD_PATH'] = botguard_path
-        print(f"✅ Environment variable set: RUSTYPIPE_BOTGUARD_PATH={botguard_path}")
+        
+        # Also set alternative env vars that yt-dlp might check
+        os.environ['YT_DLP_RUSTYPIPE_BOTGUARD'] = botguard_path
+        os.environ['RUSTYPIPE_BOTGUARD'] = botguard_path
+        
+        print(f"✅ Environment variables set:")
+        print(f"   - RUSTYPIPE_BOTGUARD_PATH={botguard_path}")
+        print(f"   - YT_DLP_RUSTYPIPE_BOTGUARD={botguard_path}")
+        print(f"   - RUSTYPIPE_BOTGUARD={botguard_path}")
         
         # Test if executable
         if os.access(botguard_path, os.X_OK):
             print(f"✅ Botguard is executable")
+            
+            # Test if it actually works
+            try:
+                result = subprocess.run(
+                    [botguard_path, '--version'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    print(f"✅ Botguard version test passed")
+                else:
+                    print(f"⚠️  Botguard version test failed (may still work)")
+            except Exception as e:
+                print(f"⚠️  Could not test botguard: {e}")
         else:
             print(f"⚠️  Botguard not executable, attempting to fix...")
             try:
@@ -214,11 +237,24 @@ def get_ydl_opts():
         'nocheckcertificate': True,
     }
     
-    # 🎯 CRITICAL: RustyPipe is built into yt-dlp!
-    # Just need to ensure botguard path is set
+    # 🎯 CRITICAL: Configure RustyPipe botguard explicitly
     if BOTGUARD_PATH:
         print(f"✅ [get_ydl_opts] RustyPipe botguard configured at: {BOTGUARD_PATH}")
+        
+        # Set in extractor args (yt-dlp checks this)
+        opts['extractor_args'] = {
+            'youtube': {
+                'player_client': ['android', 'web'],  # Try multiple clients
+            }
+        }
+        
+        # Verify environment variable is still set
+        if os.getenv('RUSTYPIPE_BOTGUARD_PATH') != BOTGUARD_PATH:
+            os.environ['RUSTYPIPE_BOTGUARD_PATH'] = BOTGUARD_PATH
+            print(f"🔄 [get_ydl_opts] Re-set environment variable")
+        
         print(f"✅ [get_ydl_opts] yt-dlp will use RustyPipe for po_token generation")
+        print(f"🔐 [get_ydl_opts] ENV: RUSTYPIPE_BOTGUARD_PATH={os.getenv('RUSTYPIPE_BOTGUARD_PATH')}")
     else:
         print(f"⚠️  [get_ydl_opts] No botguard - may have signature issues")
     
