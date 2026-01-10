@@ -153,7 +153,7 @@ def get_ydl_opts(strategy: str = "default"):
     Get yt-dlp options based on strategy.
     
     Strategies:
-    - "default": Use web client with cookies (best quality)
+    - "default": Use web client with cookies + botguard
     - "tv": Use TV client (no cookies needed, works on most videos)
     - "ios": Use iOS client (fallback)
     - "android": Use Android client (another fallback)
@@ -181,6 +181,13 @@ def get_ydl_opts(strategy: str = "default"):
             opts['cookiefile'] = COOKIE_PATH
             extractor_args['player_client'] = ['web']
             print(f"✅ Using WEB client with cookies")
+            
+            # If botguard is available, configure it for po_token
+            if BOTGUARD_WORKING and BOTGUARD_PATH:
+                # Tell yt-dlp where to find botguard
+                extractor_args['getpot_bgutil_baseurl'] = ''  # Disable bgutil server
+                extractor_args['getpot_bgutil_program'] = BOTGUARD_PATH
+                print(f"✅ Botguard configured: {BOTGUARD_PATH}")
         else:
             # No cookies, fall back to TV
             extractor_args['player_client'] = ['tv', 'mweb']
