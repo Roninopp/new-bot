@@ -220,6 +220,16 @@ async def play_command(client, message: Message):
                 if success:
                     connection_success = True
                     print("✅ [play_command] Stream started successfully!")
+                    
+                    # Start duration-based monitoring
+                    if song_info.get('duration'):
+                        from Yumeko.modules.music_v2 import monitor_stream_duration
+                        task = asyncio.create_task(
+                            monitor_stream_duration(message.chat.id, song_info.get('file_path'), song_info['duration'])
+                        )
+                        monitoring_tasks[message.chat.id] = task
+                        print(f"⏰ [play_command] Started duration monitor for {song_info['duration']}s")
+                    
                     break
                 else:
                     last_error = result
@@ -284,11 +294,15 @@ async def play_command(client, message: Message):
                 ]
             ])
             
+            # Beautiful blockquote style message
             now_playing = (
-                f"**▶️ Now Playing ({format_type})**\n\n"
-                f"🎵 **Title:** {title}\n"
-                f"👤 **Requested by:** {message.from_user.mention}\n"
-                f"⏱️ **Duration:** {duration // 60}:{duration % 60:02d}"
+                f"**▶️ Now Playing ({format_type})**\n"
+                f"**━━━━━━━━━━━━━━━━**\n\n"
+                f"> 🎵 **{title}**\n"
+                f"> \n"
+                f"> 👤 Requested by: {message.from_user.mention}\n"
+                f"> ⏱️ Duration: `{duration // 60}:{duration % 60:02d}`\n"
+                f"> 🎧 Quality: **{format_type}**"
             )
             
             if thumbnail:
