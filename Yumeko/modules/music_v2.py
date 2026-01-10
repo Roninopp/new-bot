@@ -14,7 +14,7 @@ from pyrogram.errors import (
 )
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality
-from pytgcalls.exceptions import NoActiveGroupCall, GroupCallNotFound
+from pytgcalls.exceptions import NoActiveGroupCall
 
 # Import from Part 1
 from Yumeko.modules.music import (
