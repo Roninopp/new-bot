@@ -16,151 +16,41 @@ import yt_dlp
 # ==========================================
 # 🔥 RUSTYPIPE & PO_TOKEN SYSTEM
 # ==========================================
-def check_rustypipe_installation():
-    """Check if RustyPipe binary is installed"""
+def check_rustypipe_botguard():
+    """Check if RustyPipe botguard binary is installed"""
     print("\n" + "="*70)
-    print("🔍 RUSTYPIPE DETECTION SYSTEM - STARTING")
+    print("🔍 RUSTYPIPE BOTGUARD DETECTION - STARTING")
     print("="*70)
     
-    rustypipe_paths = [
-        '/app/rustypipe/target/release/rustypipe',
-        './rustypipe/target/release/rustypipe',
-        'rustypipe',
-        '/usr/local/bin/rustypipe'
-    ]
+    botguard_path = '/app/rustypipe-botguard'
     
-    rustypipe_path = None
-    for path in rustypipe_paths:
-        if os.path.exists(path):
-            rustypipe_path = path
-            print(f"✅ RustyPipe found at: {rustypipe_path}")
-            break
-    
-    if not rustypipe_path:
-        rustypipe_path = shutil.which('rustypipe')
-        if rustypipe_path:
-            print(f"✅ RustyPipe found in PATH: {rustypipe_path}")
-    
-    if not rustypipe_path:
-        print("❌ RustyPipe NOT FOUND!")
-        print("⚠️  Bot will work with cookies only (will die when cookies expire)")
-        print("="*70 + "\n")
-        return None
-    
-    # Test RustyPipe
-    try:
-        result = subprocess.run(
-            [rustypipe_path, '--version'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode == 0:
-            print(f"✅ RustyPipe works! Version: {result.stdout.strip()}")
-            print("="*70 + "\n")
-            return rustypipe_path
-        else:
-            print(f"❌ RustyPipe test failed")
-            print("="*70 + "\n")
-            return None
-    except Exception as e:
-        print(f"❌ RustyPipe test error: {e}")
-        print("="*70 + "\n")
-        return None
-
-RUSTYPIPE_PATH = check_rustypipe_installation()
-
-def generate_po_token():
-    """Generate fresh po_token using RustyPipe"""
-    print("\n" + "="*70)
-    print("🎯 PO_TOKEN GENERATION - STARTING")
-    print("="*70)
-    
-    if not RUSTYPIPE_PATH:
-        print("❌ RustyPipe not available, cannot generate po_token")
-        print("="*70 + "\n")
-        return None
-    
-    try:
-        print("🔄 Calling RustyPipe to generate po_token...")
+    if os.path.exists(botguard_path):
+        print(f"✅ Botguard found at: {botguard_path}")
         
-        # RustyPipe command to generate po_token
-        result = subprocess.run(
-            [RUSTYPIPE_PATH, 'generate-po-token'],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
+        # Set environment variable for yt-dlp
+        os.environ['RUSTYPIPE_BOTGUARD_PATH'] = botguard_path
+        print(f"✅ Environment variable set: RUSTYPIPE_BOTGUARD_PATH={botguard_path}")
         
-        if result.returncode == 0:
-            po_token = result.stdout.strip()
-            if po_token and len(po_token) > 10:
-                print(f"✅ PO_TOKEN GENERATED: {po_token[:20]}...{po_token[-10:]}")
-                print(f"📊 Token Length: {len(po_token)} characters")
-                
-                # Save to file for persistence
-                po_token_file = '/app/po_token.txt'
-                try:
-                    with open(po_token_file, 'w') as f:
-                        f.write(po_token)
-                    print(f"💾 Saved to: {po_token_file}")
-                except Exception as e:
-                    print(f"⚠️  Failed to save token: {e}")
-                
-                print("="*70 + "\n")
-                return po_token
-            else:
-                print(f"❌ Invalid po_token received: {po_token}")
-                print("="*70 + "\n")
-                return None
+        # Test if executable
+        if os.access(botguard_path, os.X_OK):
+            print(f"✅ Botguard is executable")
         else:
-            print(f"❌ RustyPipe failed: {result.stderr[:200]}")
-            print("="*70 + "\n")
-            return None
-            
-    except subprocess.TimeoutExpired:
-        print("❌ RustyPipe timeout (30s)")
+            print(f"⚠️  Botguard not executable, attempting to fix...")
+            try:
+                os.chmod(botguard_path, 0o755)
+                print(f"✅ Fixed permissions")
+            except Exception as e:
+                print(f"⚠️  Could not fix permissions: {e}")
+        
         print("="*70 + "\n")
-        return None
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        print("="*70 + "\n")
-        return None
-
-def load_or_generate_po_token():
-    """Load existing po_token or generate new one"""
-    print("\n" + "="*70)
-    print("🔑 PO_TOKEN LOADER - STARTING")
-    print("="*70)
-    
-    po_token_file = '/app/po_token.txt'
-    
-    # Try to load existing token
-    if os.path.exists(po_token_file):
-        try:
-            with open(po_token_file, 'r') as f:
-                token = f.read().strip()
-                if token and len(token) > 10:
-                    print(f"✅ Loaded existing po_token: {token[:20]}...{token[-10:]}")
-                    print(f"📊 Token age: {os.path.getmtime(po_token_file)}")
-                    print("="*70 + "\n")
-                    return token
-        except Exception as e:
-            print(f"⚠️  Failed to load token: {e}")
-    
-    # Generate new token
-    print("🔄 No valid token found, generating fresh one...")
-    token = generate_po_token()
-    
-    if token:
-        print("✅ Fresh po_token ready!")
+        return botguard_path
     else:
-        print("❌ Failed to generate po_token")
-    
-    print("="*70 + "\n")
-    return token
+        print(f"⚠️  Botguard not found at {botguard_path}")
+        print(f"⚠️  yt-dlp will work without it (may have signature issues)")
+        print("="*70 + "\n")
+        return None
 
-PO_TOKEN = load_or_generate_po_token()
+BOTGUARD_PATH = check_rustypipe_botguard()
 
 # ==========================================
 # 🔍 CRITICAL: FFMPEG DETECTION SYSTEM
@@ -302,12 +192,11 @@ DOWNLOAD_FOLDER = "downloads/music"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 def get_ydl_opts():
-    """Get yt-dlp options with FFmpeg, cookies, and RustyPipe po_token"""
+    """Get yt-dlp options with FFmpeg, cookies, and RustyPipe botguard"""
     print(f"\n🔧 [get_ydl_opts] === STARTING ===")
     print(f"🔧 [get_ydl_opts] COOKIE_PATH: {COOKIE_PATH}")
     print(f"🔧 [get_ydl_opts] FFMPEG_AVAILABLE: {FFMPEG_AVAILABLE}")
-    print(f"🔧 [get_ydl_opts] RUSTYPIPE_AVAILABLE: {RUSTYPIPE_PATH is not None}")
-    print(f"🔧 [get_ydl_opts] PO_TOKEN_AVAILABLE: {PO_TOKEN is not None}")
+    print(f"🔧 [get_ydl_opts] BOTGUARD_AVAILABLE: {BOTGUARD_PATH is not None}")
     
     cookie_file = COOKIE_PATH if COOKIE_PATH and os.path.exists(COOKIE_PATH) else None
     if cookie_file:
@@ -325,17 +214,13 @@ def get_ydl_opts():
         'nocheckcertificate': True,
     }
     
-    # 🎯 CRITICAL: Add RustyPipe po_token
-    if PO_TOKEN:
-        print(f"✅ [get_ydl_opts] Adding po_token to extractor args")
-        opts['extractor_args'] = {
-            'youtube': {
-                'po_token': PO_TOKEN
-            }
-        }
-        print(f"🔐 [get_ydl_opts] po_token configured: {PO_TOKEN[:20]}...{PO_TOKEN[-10:]}")
+    # 🎯 CRITICAL: RustyPipe is built into yt-dlp!
+    # Just need to ensure botguard path is set
+    if BOTGUARD_PATH:
+        print(f"✅ [get_ydl_opts] RustyPipe botguard configured at: {BOTGUARD_PATH}")
+        print(f"✅ [get_ydl_opts] yt-dlp will use RustyPipe for po_token generation")
     else:
-        print(f"⚠️  [get_ydl_opts] No po_token available - bot may fail soon!")
+        print(f"⚠️  [get_ydl_opts] No botguard - may have signature issues")
     
     # Add FFmpeg postprocessor if available
     if FFMPEG_AVAILABLE and FFMPEG_PATH:
@@ -360,7 +245,7 @@ async def download_audio(url: str) -> dict:
     """Download audio from YouTube with RustyPipe support"""
     print(f"\n🔥 [download_audio] === STARTING ===")
     print(f"🔥 [download_audio] URL: {url}")
-    print(f"🔥 [download_audio] RustyPipe: {'✅ Active' if PO_TOKEN else '❌ Inactive'}")
+    print(f"🔥 [download_audio] RustyPipe: {'✅ Active' if BOTGUARD_PATH else '❌ Inactive'}")
     print(f"🔥 [download_audio] Cookies: {'✅ Active' if COOKIE_PATH else '❌ Inactive'}")
     
     ydl_opts = get_ydl_opts()
@@ -401,18 +286,18 @@ async def download_audio(url: str) -> dict:
             # Enhanced error diagnosis
             if "Sign in" in error_str or "bot" in error_str.lower():
                 print(f"❌ [download_audio] DIAGNOSIS: Cookie/Auth failed!")
-                if not PO_TOKEN:
-                    print(f"🔥 [download_audio] CRITICAL: No po_token - this is why it failed!")
-                    print(f"🔥 [download_audio] ACTION: Check RustyPipe installation")
+                if not BOTGUARD_PATH:
+                    print(f"🔥 [download_audio] CRITICAL: No botguard - this may be why it failed!")
+                    print(f"🔥 [get_ydl_opts] ACTION: Check botguard installation")
                 else:
-                    print(f"⚠️  [download_audio] po_token present but still failed")
+                    print(f"⚠️  [download_audio] Botguard present but still failed")
                     print(f"⚠️  [download_audio] Cookies might be expired")
             elif "Signature" in error_str:
                 print(f"❌ [download_audio] DIAGNOSIS: Signature challenge failed!")
                 print(f"⚠️  [download_audio] Need rustypipe-botguard binary")
             elif "rustypipe" in error_str.lower():
                 print(f"❌ [download_audio] DIAGNOSIS: RustyPipe issue!")
-                print(f"🔥 [download_audio] Check: {RUSTYPIPE_PATH}")
+                print(f"🔥 [download_audio] Check botguard: {BOTGUARD_PATH}")
             elif "format" in error_str.lower():
                 print(f"❌ [download_audio] DIAGNOSIS: Format selection failed!")
             elif "ffmpeg" in error_str.lower():
@@ -428,22 +313,13 @@ def is_youtube_url(url: str) -> bool:
 async def search_youtube(query: str) -> Optional[str]:
     """Search YouTube and return first result URL"""
     print(f"🔍 [search_youtube] Searching: {query}")
-    print(f"🔍 [search_youtube] RustyPipe: {'✅' if PO_TOKEN else '❌'}")
+    print(f"🔍 [search_youtube] RustyPipe: {'✅' if BOTGUARD_PATH else '❌'}")
     
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'default_search': 'ytsearch'
     }
-    
-    # Add po_token for search
-    if PO_TOKEN:
-        ydl_opts['extractor_args'] = {
-            'youtube': {
-                'po_token': PO_TOKEN
-            }
-        }
-        print(f"✅ [search_youtube] Using po_token for search")
     
     if COOKIE_PATH and os.path.exists(COOKIE_PATH):
         ydl_opts['cookiefile'] = COOKIE_PATH
@@ -488,32 +364,33 @@ def clear_queue(chat_id: int):
 # 📊 STARTUP SUMMARY
 # ==========================================
 print(f"\n{'='*70}")
-print(f"✅ MUSIC MODULE CORE LOADED - ENHANCED WITH RUSTYPIPE")
+print(f"✅ MUSIC MODULE CORE LOADED - WITH RUSTYPIPE SUPPORT")
 print(f"{'='*70}")
 print(f"🍪 Cookies:    {'✅ Available' if COOKIE_PATH else '❌ Not Found'}")
 print(f"🎬 FFmpeg:     {'✅ Available' if FFMPEG_AVAILABLE else '❌ Not Available'}")
-print(f"🔥 RustyPipe:  {'✅ Available' if RUSTYPIPE_PATH else '❌ Not Found'}")
-print(f"🔑 PO_Token:   {'✅ Generated' if PO_TOKEN else '❌ Not Generated'}")
+print(f"🔥 RustyPipe:  {'✅ Available (Built-in yt-dlp)' if BOTGUARD_PATH else '⚠️  Botguard Missing'}")
 print(f"{'='*70}")
 
 if FFMPEG_PATH:
     print(f"📂 FFmpeg Path: {FFMPEG_PATH}")
-if RUSTYPIPE_PATH:
-    print(f"📂 RustyPipe Path: {RUSTYPIPE_PATH}")
-if PO_TOKEN:
-    print(f"🔐 PO_Token: {PO_TOKEN[:20]}...{PO_TOKEN[-10:]} ({len(PO_TOKEN)} chars)")
+if BOTGUARD_PATH:
+    print(f"📂 Botguard Path: {BOTGUARD_PATH}")
 
 print(f"{'='*70}")
 
-if not PO_TOKEN:
-    print(f"\n⚠️  WARNING: NO PO_TOKEN - BOT MAY DIE SOON!")
-    print(f"⚠️  Check RustyPipe installation in install_rustypipe.sh")
-    print(f"⚠️  Bot is running on cookies only (expires quickly)")
+if not BOTGUARD_PATH:
+    print(f"\n⚠️  WARNING: NO BOTGUARD - May have signature issues!")
+    print(f"⚠️  Run install_rustypipe.sh to install botguard")
+    print(f"⚠️  Bot will work with cookies but may fail on some videos")
 elif not COOKIE_PATH:
-    print(f"\n⚠️  WARNING: NO COOKIES - Bot relies 100% on po_token")
-    print(f"✅ This is OK if RustyPipe is working properly")
+    print(f"\n⚠️  WARNING: NO COOKIES - Bot relies on RustyPipe")
+    print(f"✅ This is OK if botguard is working properly")
 else:
-    print(f"\n✅ OPTIMAL SETUP: Both cookies AND po_token available!")
-    print(f"✅ Bot will have maximum lifespan")
+    print(f"\n✅ OPTIMAL SETUP: Both cookies AND RustyPipe botguard!")
+    print(f"✅ Bot will have maximum compatibility")
+
+print(f"\nℹ️  NOTE: yt-dlp has RustyPipe built-in!")
+print(f"ℹ️  The botguard binary helps with signature challenges")
+print(f"ℹ️  Fresh po_tokens are generated automatically by yt-dlp")
 
 print(f"{'='*70}\n")
