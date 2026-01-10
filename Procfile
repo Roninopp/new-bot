@@ -1,1 +1,1 @@
-worker: bash install_rustypipe.sh && python3 -m Yumeko
+worker: chmod +x start.sh && ./start.sh
