@@ -1,6 +1,6 @@
 """
-Music Player Module - API Download Version (v3)
-Fixes HTTP 400 Error by sending API Headers during download.
+Music Player Module - Final API Version
+Fixes: Unknown Title, 0:00 Duration, and Queue Logic
 """
 
 import asyncio
@@ -14,7 +14,7 @@ import yt_dlp
 logger = logging.getLogger(__name__)
 
 # ==========================================
-# 🧱 CONFIGURATION & DUMMY VARS
+# 🧱 CONFIG & DUMMY VARS (Compatibility)
 # ==========================================
 FFMPEG_AVAILABLE = True  
 COOKIE_PATH = None
@@ -27,124 +27,103 @@ API_KEY = "xbit_qxkNri00qFMQcYL3L1cOGML0qTTI5fJE"
 BASE_URL = "https://tgapi.xbitcode.com"
 
 # ==========================================
-# 🔧 HELPER FUNCTIONS
+# 🎵 METADATA ENGINE (Fixes Unknown Title)
 # ==========================================
-def is_youtube_url(url: str) -> bool:
-    """Check if string is a YouTube URL."""
-    return bool(re.match(r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/', url))
-
-async def get_stream_link(video_id: str):
+async def get_video_info(url: str):
     """
-    Fetches audio link from XBitCode API.
+    Uses yt-dlp to get REAL metadata (Title, Duration) without downloading.
     """
-    endpoint = f"{BASE_URL}/info/{video_id}"
-    headers = {
-        "x-api-key": API_KEY,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    ydl_opts = {
+        'quiet': True, 
+        'no_warnings': True, 
+        'skip_download': True, # We only want info
+        'extract_flat': True   # Fast mode
     }
-
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(endpoint, headers=headers) as response:
-                if response.status != 200:
-                    return None, f"API Error: {response.status}"
-
-                data = await response.json()
-                if data.get("status") == "success":
-                    return data.get("audio_url"), data.get("title", "Unknown Title")
-                else:
-                    return None, data.get("message", "Unknown API Error")
-        except Exception as e:
-            return None, f"Connection Error: {e}"
-
-# ==========================================
-# 🎵 SEARCH FUNCTION
-# ==========================================
-async def search_youtube(query: str):
-    """
-    Searches YouTube to get a Video URL. 
-    """
-    if is_youtube_url(query):
-        return query
-
-    logger.info(f"🔍 [search_youtube] Searching for: {query}")
-    ydl_opts = {'quiet': True, 'no_warnings': True, 'default_search': 'ytsearch', 'extract_flat': True}
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = await asyncio.to_thread(ydl.extract_info, f"ytsearch:{query}", download=False)
-            if info and 'entries' in info and len(info['entries']) > 0:
-                return f"https://www.youtube.com/watch?v={info['entries'][0]['id']}"
+            info = await asyncio.to_thread(ydl.extract_info, url, download=False)
+            
+            # If it's a playlist/search result, get first item
+            if 'entries' in info:
+                info = info['entries'][0]
+                
+            return {
+                "id": info.get('id'),
+                "title": info.get('title', 'Unknown Title'),
+                "duration": int(info.get('duration', 0)),
+                "thumbnail": info.get('thumbnail')
+            }
     except Exception as e:
-        logger.error(f"❌ [search_youtube] Failed: {e}")
-    
-    return None
+        logger.error(f"Metadata Error: {e}")
+        return None
 
 # ==========================================
-# 🔥 CORE HANDLER (DOWNLOAD MODE)
+# 🔥 CORE HANDLER (API DOWNLOAD)
 # ==========================================
+async def get_stream_link(video_id: str):
+    endpoint = f"{BASE_URL}/info/{video_id}"
+    headers = {"x-api-key": API_KEY}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(endpoint, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return data.get("audio_url")
+            return None
+
 async def download_audio(url: str):
     """
-    1. Gets Stream URL from API.
-    2. Downloads the file to /tmp WITH HEADERS.
-    3. Returns the LOCAL path to the player.
+    1. Get Metadata (Title/Duration) via yt-dlp.
+    2. Download File via API.
     """
-    logger.info(f"🔥 [API DOWNLOAD] Processing: {url}")
+    logger.info(f"🔥 [PROCESS] Processing: {url}")
     
-    # 1. Extract ID
-    regex = r"(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^\"&?\/\s]{11})"
-    match = re.search(regex, url)
-    if not match:
-        raise Exception("Invalid YouTube URL")
+    # 1. Get Real Metadata First
+    meta = await get_video_info(url)
+    if not meta:
+        raise Exception("Could not fetch video metadata")
     
-    video_id = match.group(1)
+    video_id = meta['id']
+    title = meta['title']
+    duration = meta['duration'] # Now we have the real integer duration
     
-    # 2. Get Stream Link
-    stream_url, title = await get_stream_link(video_id)
+    # 2. Get Stream URL from API
+    stream_url = await get_stream_link(video_id)
     if not stream_url:
-        raise Exception(f"API Failed: {title}")
+        raise Exception("API failed to provide download link")
 
-    # 3. DOWNLOAD the file (Fixed Headers)
+    # 3. Download the File (With Headers)
     file_path = os.path.join(DOWNLOAD_FOLDER, f"{video_id}.mp3")
     
-    # Check if we need to download
     if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-        logger.info(f"📥 Downloading from API to: {file_path}")
-        
-        # HEADERS ARE CRITICAL HERE
+        logger.info(f"📥 Downloading: {title}")
         headers = {
             "x-api-key": API_KEY,
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
-        
         async with aiohttp.ClientSession() as session:
             async with session.get(stream_url, headers=headers) as resp:
                 if resp.status == 200:
                     with open(file_path, 'wb') as f:
                         while True:
-                            chunk = await resp.content.read(1024*1024) # 1MB chunks
-                            if not chunk:
-                                break
+                            chunk = await resp.content.read(1024*1024)
+                            if not chunk: break
                             f.write(chunk)
                 else:
-                    # Log the response text to debug if it fails again
-                    error_text = await resp.text()
-                    logger.error(f"❌ Download Failed {resp.status}: {error_text}")
-                    raise Exception(f"Download Failed: HTTP {resp.status}")
-    else:
-        logger.info(f"✅ File already exists in cache: {file_path}")
+                    raise Exception(f"Download HTTP {resp.status}")
 
-    # 4. Return LOCAL path
+    # 4. Return Data (Compatible with PyTgCalls)
     return {
         'title': title,
-        'duration': 0,
+        'duration': duration, # Real duration fixes the "0:00" bug
         'file_path': file_path,
         'url': url,
-        'thumbnail': None
+        'thumbnail': meta['thumbnail'],
+        'vidid': video_id
     }
 
 # ==========================================
-# 🎵 QUEUE MANAGEMENT
+# 🎵 QUEUE & SEARCH UTILS
 # ==========================================
 music_queue = {}
 current_playing = {}
@@ -159,10 +138,23 @@ def clear_queue(chat_id: int):
     if chat_id in music_queue: music_queue[chat_id] = []
     if chat_id in current_playing: del current_playing[chat_id]
 
+async def search_youtube(query: str):
+    """Simple search to get URL."""
+    if "youtube.com" in query or "youtu.be" in query: return query
+    ydl_opts = {'quiet': True, 'default_search': 'ytsearch', 'extract_flat': True}
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = await asyncio.to_thread(ydl.extract_info, f"ytsearch:{query}", download=False)
+        if 'entries' in info and info['entries']:
+            return f"https://www.youtube.com/watch?v={info['entries'][0]['id']}"
+    return None
+
 # ==========================================
-# 📊 STARTUP SUMMARY
+# 🧹 HELPER FOR AUTO-LEAVE
 # ==========================================
-print(f"\n{'='*70}")
-print(f"✅ MUSIC MODULE LOADED (DOWNLOAD MODE V3)")
-print(f"🚀 Status: Headers Added to Download Request")
-print(f"{'='*70}\n")
+def get_next_song(chat_id: int):
+    """Returns the next song in queue, or None if empty."""
+    if chat_id in music_queue and music_queue[chat_id]:
+        return music_queue[chat_id].pop(0)
+    return None
+
+print(f"\n✅ MUSIC MODULE LOADED (FINAL v4)")
