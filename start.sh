@@ -17,7 +17,7 @@ export RUSTYPIPE_BOTGUARD_PATH="$(pwd)/rustypipe-botguard"
 
 # 2. Run the Diagnostic Script FIRST
 echo "🔍 Running API Diagnostic..."
-python3 -m yumeko
+python3 -m Yumeko
 
 # 3. Start the Bot (Optional: Comment this out if you only want to test)
 # echo "🎵 Starting Music Bot..."
