@@ -1,162 +1,63 @@
-#!/bin/bash
-set -e
+import requests
+import os
+import sys
 
-echo "🚀 Starting Music Bot with RustyPipe Support..."
-echo "================================================"
+# Your Config
+API_KEY = "xbit_qxkNri00qFMQcYL3L1cOGML0qTTI5fJE"
+VIDEO_ID = "gEo8IrFbecM" # "Let me down slowly"
+BASE_URL = "https://tgapi.xbitcode.com"
 
-# CRITICAL: Always work from /app
-cd /app
+print(f"🚀 DIAGNOSTIC: Testing API Connection...")
 
-BOTGUARD_PATH="/app/rustypipe-botguard"
+# 1. Get Info
+url = f"{BASE_URL}/info/{VIDEO_ID}"
+headers = {"x-api-key": API_KEY}
 
-# Function to download and extract botguard
-download_botguard() {
-    echo "📥 Downloading rustypipe-botguard..."
+try:
+    print(f"🔹 Fetching metadata from: {url}")
+    resp = requests.get(url, headers=headers, timeout=10)
     
-    TEMP_DIR="/tmp/botguard_download"
-    rm -rf "$TEMP_DIR"
-    mkdir -p "$TEMP_DIR"
-    
-    # Source 1: Codeberg v0.1.2 (latest stable)
-    echo "📥 Trying Codeberg v0.1.2 (tar.xz)..."
-    if curl -L -f -o "$TEMP_DIR/botguard.tar.xz" \
-        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.2/rustypipe-botguard-v0.1.2-x86_64-unknown-linux-gnu.tar.xz" \
-        --max-time 120 --retry 3 2>/dev/null; then
+    if resp.status_code != 200:
+        print(f"❌ API Error: {resp.status_code} - {resp.text}")
+        sys.exit(1)
         
-        echo "📦 Extracting..."
-        # Extract in subshell to not change current directory
-        (cd "$TEMP_DIR" && tar -xJf botguard.tar.xz 2>/dev/null) || true
+    data = resp.json()
+    if data.get("status") != "success":
+        print(f"❌ API Logic Error: {data}")
+        sys.exit(1)
         
-        # Find the binary
-        EXTRACTED_BIN=$(find "$TEMP_DIR" -name "rustypipe-botguard" -type f 2>/dev/null | head -1)
-        if [ -n "$EXTRACTED_BIN" ] && [ -f "$EXTRACTED_BIN" ]; then
-            cp "$EXTRACTED_BIN" "$BOTGUARD_PATH"
-            chmod +x "$BOTGUARD_PATH"
-            if "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
-                echo "✅ Downloaded and extracted from Codeberg v0.1.2"
-                rm -rf "$TEMP_DIR"
-                return 0
-            fi
-        fi
-    fi
+    stream_url = data.get("audio_url")
+    print(f"✅ API Success! Stream URL received.")
+    print(f"🔗 URL: {stream_url[:50]}...") # Print first 50 chars
     
-    # Source 2: Try v0.1.1
-    echo "📥 Trying Codeberg v0.1.1 (tar.xz)..."
-    if curl -L -f -o "$TEMP_DIR/botguard.tar.xz" \
-        "https://codeberg.org/ThetaDev/rustypipe-botguard/releases/download/v0.1.1/rustypipe-botguard-v0.1.1-x86_64-unknown-linux-gnu.tar.xz" \
-        --max-time 120 --retry 3 2>/dev/null; then
-        
-        echo "📦 Extracting..."
-        (cd "$TEMP_DIR" && tar -xJf botguard.tar.xz 2>/dev/null) || true
-        
-        EXTRACTED_BIN=$(find "$TEMP_DIR" -name "rustypipe-botguard" -type f 2>/dev/null | head -1)
-        if [ -n "$EXTRACTED_BIN" ] && [ -f "$EXTRACTED_BIN" ]; then
-            cp "$EXTRACTED_BIN" "$BOTGUARD_PATH"
-            chmod +x "$BOTGUARD_PATH"
-            if "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
-                echo "✅ Downloaded and extracted from Codeberg v0.1.1"
-                rm -rf "$TEMP_DIR"
-                return 0
-            fi
-        fi
-    fi
+except Exception as e:
+    print(f"❌ Connection Failed: {e}")
+    sys.exit(1)
+
+# 2. Test Stream Access (The Critical Part)
+print(f"\n🚀 DIAGNOSTIC: Testing Stream Access...")
+try:
+    # Check for redirects (Is it sending us to googlevideo?)
+    print("🔹 Checking for redirects...")
+    stream_resp = requests.head(stream_url, headers=headers, allow_redirects=True)
     
-    rm -rf "$TEMP_DIR"
-    echo "❌ All download sources failed"
-    return 1
-}
-
-# Function to verify botguard
-verify_botguard() {
-    if [ ! -f "$BOTGUARD_PATH" ]; then
-        return 1
-    fi
+    final_url = stream_resp.url
+    print(f"📍 Final URL Domain: {final_url.split('/')[2]}")
     
-    chmod +x "$BOTGUARD_PATH" 2>/dev/null || true
+    if "googlevideo.com" in final_url:
+        print("❌ CRITICAL FAIL: The API redirects to YouTube (googlevideo.com).")
+        print("⚠️ This link is IP-LOCKED to the API server.")
+        print("⚠️ Your Heroku bot CANNOT play this because the IPs do not match.")
+        print("💡 CONCLUSION: This API will NOT work on Heroku for streaming.")
     
-    if ! "$BOTGUARD_PATH" --version >/dev/null 2>&1; then
-        return 1
-    fi
-    
-    VERSION=$("$BOTGUARD_PATH" --version 2>&1 | head -1 || echo "unknown")
-    echo "📋 Botguard version: $VERSION"
-    return 0
-}
+    elif stream_resp.status_code == 200:
+        print("✅ Stream is accessible (HTTP 200)!")
+        print("💡 CONCLUSION: The API works. The issue is in your Music Player (PyTgCalls).")
+    elif stream_resp.status_code == 403:
+        print("❌ Stream returned 403 Forbidden.")
+        print("💡 CONCLUSION: The stream requires the 'x-api-key' header, but FFmpeg isn't sending it.")
+    else:
+        print(f"⚠️ Stream returned unexpected status: {stream_resp.status_code}")
 
-# Main logic - ALWAYS FROM /app
-cd /app
-
-echo ""
-echo "🔍 Step 1: Checking existing botguard..."
-
-if verify_botguard; then
-    echo "✅ Existing botguard is working!"
-else
-    echo "⚠️  Botguard missing or incompatible, downloading..."
-    rm -f "$BOTGUARD_PATH" 2>/dev/null
-    
-    if download_botguard; then
-        if verify_botguard; then
-            echo "✅ Botguard installed successfully!"
-        else
-            echo "⚠️  Downloaded but verification failed"
-        fi
-    else
-        echo "⚠️  Could not download botguard"
-    fi
-fi
-
-# CRITICAL: Ensure we're in /app
-cd /app
-
-# Create log.txt if it doesn't exist (fix for bot crash)
-touch /app/log.txt 2>/dev/null || true
-
-# Set environment variables
-if [ -f "$BOTGUARD_PATH" ] && [ -x "$BOTGUARD_PATH" ]; then
-    export RUSTYPIPE_BOTGUARD_PATH="$BOTGUARD_PATH"
-    export YT_DLP_RUSTYPIPE_BOTGUARD="$BOTGUARD_PATH"
-    export RUSTYPIPE_BOTGUARD="$BOTGUARD_PATH"
-fi
-
-# Final status
-echo ""
-echo "================================================"
-echo "📊 FINAL STATUS:"
-echo "================================================"
-
-if [ -f "$BOTGUARD_PATH" ] && [ -x "$BOTGUARD_PATH" ]; then
-    echo "✅ RustyPipe Botguard: READY"
-    echo "   📂 Path: $BOTGUARD_PATH"
-    VERSION=$("$BOTGUARD_PATH" --version 2>&1 | head -1 || echo "unknown")
-    echo "   📋 Version: $VERSION"
-else
-    echo "⚠️  RustyPipe Botguard: NOT AVAILABLE"
-    echo "   ⚠️  Bot will use TV/iOS client fallback"
-fi
-
-# Check cookies
-if [ -f "/app/cookies.txt" ]; then
-    COOKIE_SIZE=$(stat -c%s "/app/cookies.txt" 2>/dev/null || echo "0")
-    echo "✅ Cookies: Found (${COOKIE_SIZE} bytes)"
-else
-    echo "⚠️  Cookies: NOT FOUND"
-fi
-
-# Check yt-dlp version
-YT_DLP_VERSION=$(yt-dlp --version 2>/dev/null || echo "unknown")
-echo "✅ yt-dlp version: $YT_DLP_VERSION"
-
-echo "📂 Working directory: $(pwd)"
-
-echo "================================================"
-echo ""
-
-echo "🎵 Starting Python Bot..."
-echo "================================================"
-
-# CRITICAL: Make sure we're in /app before starting Python
-cd /app
-
-# Start bot
-exec python3 -m Yumeko
+except Exception as e:
+    print(f"❌ Stream Test Failed: {e}")
