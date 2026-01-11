@@ -397,11 +397,13 @@ async def send_now_playing(chat_id, info):
     title = info['title'][:60] + ('...' if len(info['title']) > 60 else '')
     
     text = (
-        f"```\n♦️ STARTED STREAMING\n```\n\n"
-        f"```\n⭕ Title ➻:\n```{title}\n\n"
-        f"```\n⭕ Duration ➻:\n```{duration_str}\n\n"
-        f"```\n⭕ Requested by ➻:\n```You\n\n"
-        f"```\n♦️ Powered by ➻\n```Samurai Network"
+        f"```\n"
+        f"♦️ STARTED STREAMING\n\n"
+        f"⭕ Title ➻: {title}\n\n"
+        f"⭕ Duration ➻: {duration_str}\n\n"
+        f"⭕ Requested by ➻: You\n\n"
+        f"♦️ Powered by ➻ Samurai Network\n"
+        f"```"
     )
     
     try:
