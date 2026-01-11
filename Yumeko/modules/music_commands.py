@@ -266,7 +266,7 @@ async def send_now_playing(chat_id, info):
         f"**▶️ Now Playing**\n\n"
         f"🎵 `{info['title']}`\n"
         f"⏱️ `{info['duration'] // 60}:{info['duration'] % 60:02d}`\n"
-        f"🎧 Source: **XBitCode API**"
+        f"🎧 Source: **Samurai Network**"
     )
     
     try:
