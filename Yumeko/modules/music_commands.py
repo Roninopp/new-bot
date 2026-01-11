@@ -379,6 +379,9 @@ async def send_now_playing(chat_id, info):
             InlineKeyboardButton("▶️", callback_data="resume"),
             InlineKeyboardButton("⏭", callback_data="skip"),
             InlineKeyboardButton("⏹", callback_data="stop")
+        ],
+        [
+            InlineKeyboardButton("𝐒𝐔𝐌𝐌𝐎𝐍 𝐌𝐄 𝐍𝐎𝐖", url="https://t.me/MariaModBot?start=start")
         ]
     ])
     
@@ -394,15 +397,11 @@ async def send_now_playing(chat_id, info):
     title = info['title'][:60] + ('...' if len(info['title']) > 60 else '')
     
     text = (
-        f"```\n"
-        f"╔═══════════════════════╗\n"
-        f"║  ♦️ STARTED STREAMING ║\n"
-        f"╚═══════════════════════╝\n"
-        f"```\n"
-        f"**⭕ Title ➻:** {title}\n"
-        f"**⭕ Duration ➻:** {duration_str}\n"
-        f"**⭕ Requested by ➻:** {info.get('uploader', 'You')}\n\n"
-        f"**♦️ Powered by ➻** `Samurai Network`"
+        f"```\n♦️ STARTED STREAMING\n```\n\n"
+        f"```\n⭕ Title ➻:\n```{title}\n\n"
+        f"```\n⭕ Duration ➻:\n```{duration_str}\n\n"
+        f"```\n⭕ Requested by ➻:\n```You\n\n"
+        f"```\n♦️ Powered by ➻\n```Samurai Network"
     )
     
     try:
@@ -442,5 +441,5 @@ __help__ = """
 • `/resume` - Resume
 • `/queue` - View queue
 
-*Powered by XBitCode API*
+*Powered by Samurai*
 """
