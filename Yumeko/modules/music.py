@@ -1,5 +1,6 @@
 """
 Music Player Module - Integrated API Version
+Fixed: Added back 'is_youtube_url' to prevent ImportError
 """
 
 import asyncio
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 # ==========================================
 # 🧱 BACKWARD COMPATIBILITY (DUMMY VARS)
 # ==========================================
-# These are added so music_commands.py doesn't crash on import
+# These prevent ImportError from other modules
 FFMPEG_AVAILABLE = True  
 COOKIE_PATH = None
 BOTGUARD_WORKING = False
@@ -23,23 +24,33 @@ DOWNLOAD_FOLDER = '/tmp/music_downloads'
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 # ==========================================
-# 🎵 API HANDLER (Directly Included)
+# 🔧 HELPER FUNCTIONS (Restored)
+# ==========================================
+def is_youtube_url(url: str) -> bool:
+    """Check if string is a YouTube URL. Restored to fix ImportError."""
+    return bool(re.match(r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/', url))
+
+# ==========================================
+# 🎵 API HANDLER
 # ==========================================
 API_KEY = "xbit_qxkNri00qFMQcYL3L1cOGML0qTTI5fJE"
 BASE_URL = "https://tgapi.xbitcode.com"
 
 async def get_stream_link(query_or_url: str):
     """
-    Fetches audio link from XBitCode API to bypass YouTube/Heroku blocks.
+    Fetches audio link from XBitCode API.
     """
     # --- Step 1: Extract Video ID ---
     video_id = None
+    # Regex to extract ID from various YouTube URL formats
     regex = r"(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^\"&?\/\s]{11})"
     match = re.search(regex, query_or_url)
     
     if match:
         video_id = match.group(1)
     else:
+        # Fallback: if user sends a search query instead of a link, we need to search first
+        # But this function expects a link/ID mostly.
         logger.warning(f"Could not extract Video ID from: {query_or_url}")
         return None, "Please provide a valid YouTube Link for this API test."
 
@@ -84,7 +95,7 @@ async def search_youtube(query: str):
     """
     Searches YouTube to get a Video URL. 
     """
-    if "youtube.com" in query or "youtu.be" in query:
+    if is_youtube_url(query):
         return query
 
     logger.info(f"🔍 [search_youtube] Searching for: {query}")
@@ -160,5 +171,5 @@ def clear_queue(chat_id: int):
 print(f"\n{'='*70}")
 print(f"✅ MUSIC MODULE LOADED (API MODE)")
 print(f"🚀 Download Logic:   XBitCode API (Internal)")
-print(f"🔧 Compatibility:    Dummy vars loaded")
+print(f"🔧 Compatibility:    'is_youtube_url' restored")
 print(f"{'='*70}\n")
