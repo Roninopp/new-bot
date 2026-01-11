@@ -1,6 +1,7 @@
 """
-Music Player Module - Final API Version (v5)
-Fixes: Unknown Title, 0:00 Duration, and Queue Logic
+Music Player Module - Final API Version (v6)
+Fixes: 'Sign in' error during Metadata check.
+Strategy: Uses 'ytsearch' bypass and failsafe fallback.
 """
 
 import asyncio
@@ -27,7 +28,7 @@ API_KEY = "xbit_qxkNri00qFMQcYL3L1cOGML0qTTI5fJE"
 BASE_URL = "https://tgapi.xbitcode.com"
 
 # ==========================================
-# 🎵 QUEUE SYSTEM (Unified)
+# 🎵 QUEUE SYSTEM
 # ==========================================
 music_queue = {}
 
@@ -40,7 +41,6 @@ def get_queue(chat_id: int) -> list:
     return music_queue.get(chat_id, [])
 
 def get_next_song(chat_id: int):
-    """Returns the next song and removes it from queue"""
     if chat_id in music_queue and music_queue[chat_id]:
         return music_queue[chat_id].pop(0)
     return None
@@ -50,36 +50,43 @@ def clear_queue(chat_id: int):
         music_queue[chat_id] = []
 
 # ==========================================
-# 🎵 METADATA ENGINE (The Fix for Unknown Title)
+# 🎵 SAFE METADATA ENGINE (The Fix)
 # ==========================================
-async def get_video_info(url: str):
+async def get_video_info(video_id: str):
     """
-    Uses yt-dlp to get REAL metadata without downloading.
+    Tries to get metadata using the 'Search' bypass.
+    If fails, returns Dummy data so the bot DOES NOT CRASH.
     """
     ydl_opts = {
         'quiet': True, 
         'no_warnings': True, 
-        'skip_download': True, # We only want info
-        'extract_flat': True   # Fast mode
+        'extract_flat': True, # crucial for speed and bypass
+        'ignoreerrors': True  # crucial to prevent crash
     }
     
     try:
+        # TRICK: Search for the ID instead of visiting the URL
+        # This often bypasses the "Sign in" check
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = await asyncio.to_thread(ydl.extract_info, url, download=False)
+            info = await asyncio.to_thread(ydl.extract_info, f"ytsearch1:{video_id}", download=False)
             
-            # Handle playlists/search results
-            if 'entries' in info:
-                info = info['entries'][0]
-                
-            return {
-                "id": info.get('id'),
-                "title": info.get('title', 'Unknown Title'),
-                "duration": int(info.get('duration', 0)),
-                "thumbnail": info.get('thumbnail')
-            }
+            if 'entries' in info and info['entries']:
+                entry = info['entries'][0]
+                return {
+                    "title": entry.get('title', 'Unknown Title'),
+                    "duration": int(entry.get('duration', 0)),
+                    "thumbnail": entry.get('thumbnail')
+                }
     except Exception as e:
-        logger.error(f"Metadata Error: {e}")
-        return None
+        logger.error(f"Metadata Bypass Failed: {e}")
+    
+    # FALLBACK: If yt-dlp is totally blocked, return dummy data
+    # The API will still download the song!
+    return {
+        "title": f"YouTube Audio ({video_id})",
+        "duration": 0,
+        "thumbnail": None
+    }
 
 # ==========================================
 # 🔥 CORE HANDLER (API DOWNLOAD)
@@ -92,36 +99,46 @@ async def get_stream_link(video_id: str):
             async with session.get(endpoint, headers=headers) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    return data.get("audio_url")
-                return None
+                    # API sometimes gives title too!
+                    return data.get("audio_url"), data.get("title") 
+                return None, None
         except:
-            return None
+            return None, None
 
 async def download_audio(url: str):
     """
-    1. Get Metadata (Title/Duration) via yt-dlp.
-    2. Download File via API.
+    Robust Downloader that survives IP Bans.
     """
     logger.info(f"🔥 [PROCESS] Processing: {url}")
     
-    # 1. Get Real Metadata First
-    meta = await get_video_info(url)
-    if not meta:
-        raise Exception("Could not fetch video metadata")
+    # 1. Extract ID
+    regex = r"(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^\"&?\/\s]{11})"
+    match = re.search(regex, url)
+    if not match:
+        # Fallback for search queries if passed directly
+        match = re.search(r"([a-zA-Z0-9_-]{11})", url)
+        if not match:
+             raise Exception("Could not find Video ID")
     
-    video_id = meta['id']
+    video_id = match.group(1)
+    
+    # 2. Try to get Metadata (Soft Fail)
+    meta = await get_video_info(video_id)
     title = meta['title']
     duration = meta['duration']
     
-    # 2. Get Stream URL from API
-    stream_url = await get_stream_link(video_id)
+    # 3. Get Stream URL from API
+    stream_url, api_title = await get_stream_link(video_id)
     if not stream_url:
-        raise Exception("API failed to provide download link")
+        raise Exception("API Download Link Failed")
+    
+    # If yt-dlp failed but API gave a title, use it!
+    if title.startswith("YouTube Audio") and api_title:
+        title = api_title
 
-    # 3. Download the File (With Headers)
+    # 4. Download the File
     file_path = os.path.join(DOWNLOAD_FOLDER, f"{video_id}.mp3")
     
-    # Download if not exists or empty
     if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
         logger.info(f"📥 Downloading: {title}")
         headers = {
@@ -139,12 +156,12 @@ async def download_audio(url: str):
                 else:
                     raise Exception(f"Download HTTP {resp.status}")
 
-    # 4. Return Data (Compatible with PyTgCalls)
+    # 5. Return Data
     return {
         'title': title,
-        'duration': duration, # Real duration
+        'duration': duration,
         'file_path': file_path,
-        'url': url,
+        'url': f"https://www.youtube.com/watch?v={video_id}",
         'thumbnail': meta['thumbnail'],
         'vidid': video_id
     }
@@ -152,18 +169,18 @@ async def download_audio(url: str):
 # ==========================================
 # 🎵 SEARCH UTILS
 # ==========================================
-# Helper to check if URL is YouTube
 def is_youtube_url(url: str) -> bool:
     return bool(re.match(r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/', url))
 
 async def search_youtube(query: str):
     """Simple search to get URL."""
     if is_youtube_url(query): return query
-    ydl_opts = {'quiet': True, 'default_search': 'ytsearch', 'extract_flat': True}
     
+    # Use ytsearch1 trick here too
+    ydl_opts = {'quiet': True, 'default_search': 'ytsearch', 'extract_flat': True}
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = await asyncio.to_thread(ydl.extract_info, f"ytsearch:{query}", download=False)
+            info = await asyncio.to_thread(ydl.extract_info, f"ytsearch1:{query}", download=False)
             if 'entries' in info and info['entries']:
                 return f"https://www.youtube.com/watch?v={info['entries'][0]['id']}"
     except:
@@ -171,8 +188,8 @@ async def search_youtube(query: str):
     return None
 
 # ==========================================
-# 🧹 CURRENT PLAYING TRACKER
+# 🧹 CURRENT PLAYING
 # ==========================================
 current_playing = {}
 
-print(f"\n✅ MUSIC MODULE LOADED (FINAL v5)")
+print(f"\n✅ MUSIC MODULE LOADED (FINAL v6 - Anti-Crash)")
