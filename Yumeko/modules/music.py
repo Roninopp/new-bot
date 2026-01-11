@@ -1,6 +1,6 @@
 """
-Music Player Module - Enhanced Professional Version (v7)
-Features: Better metadata, improved thumbnail handling, robust API integration
+Music Player Module - Clean API Version (v8)
+Fixed: Proper metadata handling, no weird dummy data
 """
 
 import asyncio
@@ -49,24 +49,21 @@ def clear_queue(chat_id: int):
         music_queue[chat_id] = []
 
 # ==========================================
-# 🎵 ENHANCED METADATA ENGINE
+# 🎵 CLEAN METADATA ENGINE
 # ==========================================
 async def get_video_info(video_id: str):
     """
-    Enhanced metadata extraction with better thumbnail handling.
-    Uses multiple strategies to get the best quality data.
+    Gets clean metadata from YouTube.
+    Returns proper data or None if fails.
     """
     ydl_opts = {
         'quiet': True, 
         'no_warnings': True, 
-        'extract_flat': False,  # Changed to False for better metadata
-        'ignoreerrors': True,
         'skip_download': True,
-        'format': 'bestaudio/best',
+        'extract_flat': 'in_playlist',
     }
     
     try:
-        # Try direct URL first for better metadata
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = await asyncio.to_thread(
                 ydl.extract_info, 
@@ -75,57 +72,21 @@ async def get_video_info(video_id: str):
             )
             
             if info:
-                # Get the best thumbnail (maxresdefault > hqdefault > default)
-                thumbnail = None
-                if 'thumbnails' in info and info['thumbnails']:
-                    # Sort by preference
-                    for thumb in reversed(info['thumbnails']):
-                        if thumb.get('url'):
-                            thumbnail = thumb['url']
-                            break
-                elif 'thumbnail' in info:
+                # Get best thumbnail
+                thumbnail = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+                if 'thumbnail' in info:
                     thumbnail = info['thumbnail']
                 
-                # Fallback to standard YouTube thumbnail URLs
-                if not thumbnail:
-                    thumbnail = f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
-                
                 return {
-                    "title": info.get('title', 'Unknown Title'),
+                    "title": info.get('title', 'Unknown'),
                     "duration": int(info.get('duration', 0)),
                     "thumbnail": thumbnail,
-                    "uploader": info.get('uploader', 'Unknown'),
-                    "views": info.get('view_count', 0)
+                    "uploader": info.get('uploader', info.get('channel', 'Unknown'))
                 }
-    except Exception as e:
-        logger.error(f"Direct metadata failed, trying search: {e}")
-        
-        # Fallback to search method
-        try:
-            ydl_opts['extract_flat'] = True
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = await asyncio.to_thread(ydl.extract_info, f"ytsearch1:{video_id}", download=False)
-                
-                if 'entries' in info and info['entries']:
-                    entry = info['entries'][0]
-                    return {
-                        "title": entry.get('title', 'Unknown Title'),
-                        "duration": int(entry.get('duration', 0)),
-                        "thumbnail": f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
-                        "uploader": entry.get('uploader', 'Unknown'),
-                        "views": entry.get('view_count', 0)
-                    }
-        except Exception as e2:
-            logger.error(f"Search metadata also failed: {e2}")
+    except:
+        pass
     
-    # FINAL FALLBACK: Return data with standard YouTube thumbnail
-    return {
-        "title": f"YouTube Audio ({video_id})",
-        "duration": 0,
-        "thumbnail": f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
-        "uploader": "Unknown",
-        "views": 0
-    }
+    return None
 
 # ==========================================
 # 📥 CORE HANDLER (API DOWNLOAD)
@@ -146,7 +107,7 @@ async def get_stream_link(video_id: str):
 
 async def download_audio(url: str):
     """
-    Robust Downloader with enhanced metadata.
+    Clean downloader with proper metadata.
     """
     logger.info(f"📥 [PROCESS] Processing: {url}")
     
@@ -156,33 +117,37 @@ async def download_audio(url: str):
     if not match:
         match = re.search(r"([a-zA-Z0-9_-]{11})", url)
         if not match:
-             raise Exception("Could not find Video ID")
+             raise Exception("Invalid URL")
     
     video_id = match.group(1)
     
-    # 2. Get Enhanced Metadata
+    # 2. Get metadata (can be None)
     meta = await get_video_info(video_id)
-    title = meta['title']
-    duration = meta['duration']
-    thumbnail = meta['thumbnail']
     
     # 3. Get Stream URL from API
     stream_url, api_title = await get_stream_link(video_id)
     if not stream_url:
-        raise Exception("API Download Link Failed")
+        raise Exception("Failed to get download link")
     
-    # If yt-dlp failed but API gave a title, use it!
-    if title.startswith("YouTube Audio") and api_title:
-        title = api_title
+    # 4. Use API title if metadata failed
+    if not meta and api_title:
+        meta = {
+            "title": api_title,
+            "duration": 0,
+            "thumbnail": f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+            "uploader": "Unknown"
+        }
+    elif not meta:
+        raise Exception("Failed to get song info")
 
-    # 4. Download the File
+    # 5. Download the File
     file_path = os.path.join(DOWNLOAD_FOLDER, f"{video_id}.mp3")
     
     if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-        logger.info(f"📥 Downloading: {title}")
+        logger.info(f"📥 Downloading: {meta['title']}")
         headers = {
             "x-api-key": API_KEY,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "User-Agent": "Mozilla/5.0"
         }
         async with aiohttp.ClientSession() as session:
             async with session.get(stream_url, headers=headers) as resp:
@@ -193,18 +158,17 @@ async def download_audio(url: str):
                             if not chunk: break
                             f.write(chunk)
                 else:
-                    raise Exception(f"Download HTTP {resp.status}")
+                    raise Exception(f"Download failed: HTTP {resp.status}")
 
-    # 5. Return Enhanced Data
+    # 6. Return clean data
     return {
-        'title': title,
-        'duration': duration,
+        'title': meta['title'],
+        'duration': meta['duration'],
         'file_path': file_path,
         'url': f"https://www.youtube.com/watch?v={video_id}",
-        'thumbnail': thumbnail,
+        'thumbnail': meta['thumbnail'],
         'vidid': video_id,
-        'uploader': meta.get('uploader', 'Unknown'),
-        'views': meta.get('views', 0)
+        'uploader': meta['uploader']
     }
 
 # ==========================================
@@ -214,7 +178,7 @@ def is_youtube_url(url: str) -> bool:
     return bool(re.match(r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/', url))
 
 async def search_youtube(query: str):
-    """Enhanced search with better error handling."""
+    """Simple search to get URL."""
     if is_youtube_url(query): 
         return query
     
@@ -229,8 +193,8 @@ async def search_youtube(query: str):
             info = await asyncio.to_thread(ydl.extract_info, f"ytsearch1:{query}", download=False)
             if 'entries' in info and info['entries']:
                 return f"https://www.youtube.com/watch?v={info['entries'][0]['id']}"
-    except Exception as e:
-        logger.error(f"Search failed: {e}")
+    except:
+        pass
     return None
 
 # ==========================================
@@ -238,4 +202,4 @@ async def search_youtube(query: str):
 # ==========================================
 current_playing = {}
 
-print(f"\n✅ MUSIC MODULE LOADED (Enhanced v7 - Professional Edition)")
+print(f"\n✅ MUSIC MODULE LOADED (Clean v8 - Fixed Output)")
