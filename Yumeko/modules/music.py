@@ -1,16 +1,71 @@
 """
-Music Player Module - Core System (API VERSION)
-Replaced complex local download logic with XBitCode API.
+Music Player Module - Integrated API Version
 """
 
 import asyncio
 import logging
 import os
+import re
+import aiohttp
 import yt_dlp
-from music_api import get_stream_link  # Import your new API handler
 
 # Setup Logging
 logger = logging.getLogger(__name__)
+
+# ==========================================
+# 🎵 API HANDLER (Directly Included)
+# ==========================================
+API_KEY = "xbit_qxkNri00qFMQcYL3L1cOGML0qTTI5fJE"
+BASE_URL = "https://tgapi.xbitcode.com"
+
+async def get_stream_link(query_or_url: str):
+    """
+    Fetches audio link from XBitCode API to bypass YouTube/Heroku blocks.
+    """
+    # --- Step 1: Extract Video ID ---
+    video_id = None
+    regex = r"(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^\"&?\/\s]{11})"
+    match = re.search(regex, query_or_url)
+    
+    if match:
+        video_id = match.group(1)
+    else:
+        logger.warning(f"Could not extract Video ID from: {query_or_url}")
+        return None, "Please provide a valid YouTube Link for this API test."
+
+    logger.info(f"🔍 Extracted Video ID: {video_id}")
+
+    # --- Step 2: Call the API ---
+    endpoint = f"{BASE_URL}/info/{video_id}"
+    headers = {
+        "x-api-key": API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(endpoint, headers=headers) as response:
+                if response.status == 403:
+                    return None, "❌ API Key is invalid or blocked!"
+                if response.status == 429:
+                    return None, "❌ Daily Request Limit Reached (100/100)!"
+                if response.status != 200:
+                    return None, f"❌ API Error: HTTP {response.status}"
+
+                data = await response.json()
+                
+                if data.get("status") == "success":
+                    audio_url = data.get("audio_url")
+                    title = data.get("title", "Unknown Title")
+                    logger.info(f"✅ API Success! Got Audio URL.")
+                    return audio_url, title
+                else:
+                    error_message = data.get("message", "Unknown API error")
+                    return None, f"❌ API Failed: {error_message}"
+
+        except Exception as e:
+            logger.error(f"❌ Connection Error: {e}")
+            return None, f"❌ Connection Error: {e}"
 
 # ==========================================
 # 🎵 SEARCH FUNCTION
@@ -18,34 +73,27 @@ logger = logging.getLogger(__name__)
 async def search_youtube(query: str):
     """
     Searches YouTube to get a Video URL. 
-    We use yt-dlp here ONLY for searching IDs (lightweight), not downloading.
     """
-    # If the user provided a direct link, just return it
     if "youtube.com" in query or "youtu.be" in query:
         return query
 
     logger.info(f"🔍 [search_youtube] Searching for: {query}")
     
-    # Lightweight options just to get the ID
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'default_search': 'ytsearch',
-        'extract_flat': True, # Don't download, just get metadata
+        'extract_flat': True,
     }
     
     try:
-        # Run in thread to avoid blocking bot
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = await asyncio.to_thread(ydl.extract_info, f"ytsearch:{query}", download=False)
-            
             if info and 'entries' in info and len(info['entries']) > 0:
                 entry = info['entries'][0]
                 video_id = entry.get('id')
                 title = entry.get('title', 'Unknown')
                 url = f"https://www.youtube.com/watch?v={video_id}"
-                
-                logger.info(f"✅ [search_youtube] Found: {title} ({url})")
                 return url
     except Exception as e:
         logger.error(f"❌ [search_youtube] Failed: {e}")
@@ -58,32 +106,26 @@ async def search_youtube(query: str):
 async def download_audio(url: str):
     """
     Old name: download_audio
-    New behavior: Fetches STREAM URL from API (Does not actually download file).
-    Returns a dict compatible with your existing player code.
+    New behavior: Fetches STREAM URL from API.
     """
     logger.info(f"🔥 [API BRIDGE] Requesting stream for: {url}")
     
-    # 1. Get the direct stream link from your new API module
     stream_url, title_or_error = await get_stream_link(url)
     
-    # 2. Handle Errors
     if not stream_url:
         logger.error(f"❌ [API BRIDGE] Failed: {title_or_error}")
         raise Exception(f"API Error: {title_or_error}")
 
-    # 3. Return data in the format your bot expects
-    # We cheat by putting the HTTP URL into 'file_path'. 
-    # PyTgCalls handles HTTP URLs perfectly!
     return {
-        'title': title_or_error,      # API returns title in second var on success
-        'duration': 0,                # API doesn't give duration, set to 0 (live stream mode)
-        'file_path': stream_url,      # <--- IMPORTANT: This is now a URL, not a local path
+        'title': title_or_error,
+        'duration': 0,
+        'file_path': stream_url,  # Direct URL for PyTgCalls
         'url': url,
-        'thumbnail': None             # We skip thumbnails for speed
+        'thumbnail': None
     }
 
 # ==========================================
-# 🎵 QUEUE MANAGEMENT (Kept same as before)
+# 🎵 QUEUE MANAGEMENT
 # ==========================================
 music_queue = {}
 current_playing = {}
@@ -107,8 +149,5 @@ def clear_queue(chat_id: int):
 # ==========================================
 print(f"\n{'='*70}")
 print(f"✅ MUSIC MODULE LOADED (API MODE)")
-print(f"{'='*70}")
-print(f"🚀 Download Logic:   Delegated to XBitCode API")
-print(f"🔍 Search Logic:     Internal yt-dlp (Metadata only)")
-print(f"🗑️  Bloatware:        Cookies/Botguard REMOVED")
+print(f"🚀 Download Logic:   XBitCode API (Internal)")
 print(f"{'='*70}\n")
