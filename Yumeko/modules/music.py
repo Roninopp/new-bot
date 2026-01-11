@@ -13,6 +13,16 @@ import yt_dlp
 logger = logging.getLogger(__name__)
 
 # ==========================================
+# 🧱 BACKWARD COMPATIBILITY (DUMMY VARS)
+# ==========================================
+# These are added so music_commands.py doesn't crash on import
+FFMPEG_AVAILABLE = True  
+COOKIE_PATH = None
+BOTGUARD_WORKING = False
+DOWNLOAD_FOLDER = '/tmp/music_downloads'
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+# ==========================================
 # 🎵 API HANDLER (Directly Included)
 # ==========================================
 API_KEY = "xbit_qxkNri00qFMQcYL3L1cOGML0qTTI5fJE"
@@ -150,4 +160,5 @@ def clear_queue(chat_id: int):
 print(f"\n{'='*70}")
 print(f"✅ MUSIC MODULE LOADED (API MODE)")
 print(f"🚀 Download Logic:   XBitCode API (Internal)")
+print(f"🔧 Compatibility:    Dummy vars loaded")
 print(f"{'='*70}\n")
