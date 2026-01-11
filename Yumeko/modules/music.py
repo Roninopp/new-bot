@@ -1,6 +1,6 @@
 """
-Music Player Module - API Download Version
-Fixes "Attempt failed" by downloading the song locally before playing.
+Music Player Module - API Download Version (v3)
+Fixes HTTP 400 Error by sending API Headers during download.
 """
 
 import asyncio
@@ -38,7 +38,10 @@ async def get_stream_link(video_id: str):
     Fetches audio link from XBitCode API.
     """
     endpoint = f"{BASE_URL}/info/{video_id}"
-    headers = {"x-api-key": API_KEY}
+    headers = {
+        "x-api-key": API_KEY,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
 
     async with aiohttp.ClientSession() as session:
         try:
@@ -83,7 +86,7 @@ async def search_youtube(query: str):
 async def download_audio(url: str):
     """
     1. Gets Stream URL from API.
-    2. Downloads the file to /tmp.
+    2. Downloads the file to /tmp WITH HEADERS.
     3. Returns the LOCAL path to the player.
     """
     logger.info(f"🔥 [API DOWNLOAD] Processing: {url}")
@@ -101,14 +104,21 @@ async def download_audio(url: str):
     if not stream_url:
         raise Exception(f"API Failed: {title}")
 
-    # 3. DOWNLOAD the file (The Fix!)
+    # 3. DOWNLOAD the file (Fixed Headers)
     file_path = os.path.join(DOWNLOAD_FOLDER, f"{video_id}.mp3")
     
-    # If file doesn't exist or is empty, download it
+    # Check if we need to download
     if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
         logger.info(f"📥 Downloading from API to: {file_path}")
+        
+        # HEADERS ARE CRITICAL HERE
+        headers = {
+            "x-api-key": API_KEY,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
         async with aiohttp.ClientSession() as session:
-            async with session.get(stream_url) as resp:
+            async with session.get(stream_url, headers=headers) as resp:
                 if resp.status == 200:
                     with open(file_path, 'wb') as f:
                         while True:
@@ -117,6 +127,9 @@ async def download_audio(url: str):
                                 break
                             f.write(chunk)
                 else:
+                    # Log the response text to debug if it fails again
+                    error_text = await resp.text()
+                    logger.error(f"❌ Download Failed {resp.status}: {error_text}")
                     raise Exception(f"Download Failed: HTTP {resp.status}")
     else:
         logger.info(f"✅ File already exists in cache: {file_path}")
@@ -125,7 +138,7 @@ async def download_audio(url: str):
     return {
         'title': title,
         'duration': 0,
-        'file_path': file_path,  # <--- Now a real file, not a URL!
+        'file_path': file_path,
         'url': url,
         'thumbnail': None
     }
@@ -150,7 +163,6 @@ def clear_queue(chat_id: int):
 # 📊 STARTUP SUMMARY
 # ==========================================
 print(f"\n{'='*70}")
-print(f"✅ MUSIC MODULE LOADED (DOWNLOAD MODE)")
-print(f"🚀 Logic: API -> Download -> Play Local File")
-print(f"🛡️ Status: 100% Reliable (Bypasses Network Errors)")
+print(f"✅ MUSIC MODULE LOADED (DOWNLOAD MODE V3)")
+print(f"🚀 Status: Headers Added to Download Request")
 print(f"{'='*70}\n")
