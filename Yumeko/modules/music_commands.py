@@ -1,7 +1,6 @@
 """
-Music Player Module - Commands & Events (FINAL FULL VERSION)
-Restored: Queue, Pause, Resume, Buttons, Help
-Added: Auto-Leave & API Support
+Music Player Module - Commands & Events (FINAL STABLE VERSION)
+Fixes: 'on_stream_end' Crash & restores Auto-Leave
 """
 
 import asyncio
@@ -29,6 +28,60 @@ from Yumeko import app
 from config import config
 from Yumeko.decorator.save import save
 from Yumeko.decorator.errors import error
+
+# ==========================================
+# 🤖 AUTO-PLAY & TIMER ENGINE
+# ==========================================
+async def auto_end_handler(chat_id, duration):
+    """
+    Waits for the song duration + 2 seconds, then plays next.
+    Replaces the broken @on_stream_end event.
+    """
+    if duration > 0:
+        await asyncio.sleep(duration + 2)  # Wait for song to finish
+    else:
+        return # Live stream or unknown duration, don't auto-skip
+
+    # Double check if we are still playing the SAME song
+    # (In case user stopped/skipped manually)
+    if chat_id in current_playing:
+        # Trigger next song
+        await play_next_song(chat_id)
+
+async def play_next_song(chat_id):
+    """Handles playing the next song or leaving"""
+    next_song = get_next_song(chat_id)
+    
+    if next_song:
+        try:
+            # Play next
+            await pytgcalls.play(
+                chat_id,
+                MediaStream(
+                    next_song['file_path'],
+                    audio_parameters=AudioQuality.HIGH
+                )
+            )
+            current_playing[chat_id] = next_song
+            await send_now_playing(chat_id, next_song)
+            
+            # 🕒 Start the Timer for the new song
+            asyncio.create_task(auto_end_handler(chat_id, next_song['duration']))
+            
+        except Exception as e:
+            print(f"Error playing next: {e}")
+            await pytgcalls.leave_call(chat_id)
+    else:
+        # Empty Queue -> Leave
+        if chat_id in current_playing:
+            del current_playing[chat_id]
+            
+        await app.send_message(chat_id, "✅ **Queue finished. Leaving voice chat.**")
+        await asyncio.sleep(3)
+        try:
+            await pytgcalls.leave_call(chat_id)
+        except:
+            pass
 
 # ==========================================
 # 🎵 PLAY COMMAND
@@ -86,13 +139,17 @@ async def play_command(client, message: Message):
         
         current_playing[message.chat.id] = info
         await send_now_playing(message.chat.id, info)
+        
+        # 🕒 START THE TIMER (This fixes the "Stuck in VC" issue)
+        asyncio.create_task(auto_end_handler(message.chat.id, info['duration']))
+        
         await status.delete()
 
     except Exception as e:
         await status.edit(f"❌ Error: {e}")
 
 # ==========================================
-# 🎵 TEXT COMMANDS (Restored)
+# 🎵 TEXT COMMANDS
 # ==========================================
 
 @app.on_message(filters.command("stop", config.COMMAND_PREFIXES) & filters.group)
@@ -172,8 +229,6 @@ async def cb_handler(_, query):
         await query.message.delete()
         return
 
-    # Check permissions (Optional: Add admin check here if needed)
-
     if action == "stop":
         clear_queue(chat_id)
         if chat_id in current_playing: del current_playing[chat_id]
@@ -222,49 +277,6 @@ async def send_now_playing(chat_id, info):
     except:
         pass
 
-async def play_next_song(chat_id):
-    """Handles playing the next song or leaving"""
-    next_song = get_next_song(chat_id)
-    
-    if next_song:
-        try:
-            # Play next
-            await pytgcalls.play(
-                chat_id,
-                MediaStream(
-                    next_song['file_path'],
-                    audio_parameters=AudioQuality.HIGH
-                )
-            )
-            current_playing[chat_id] = next_song
-            await send_now_playing(chat_id, next_song)
-            
-            # Clean up old file? (For now we rely on OS cleanup or overwrite)
-            
-        except Exception as e:
-            print(f"Error playing next: {e}")
-            await pytgcalls.leave_call(chat_id)
-    else:
-        # Empty Queue -> Leave
-        if chat_id in current_playing:
-            del current_playing[chat_id]
-            
-        await app.send_message(chat_id, "✅ **Queue finished. Leaving voice chat.**")
-        await asyncio.sleep(3)
-        try:
-            await pytgcalls.leave_call(chat_id)
-        except:
-            pass
-
-# ==========================================
-# 👂 AUTO-LEAVE EVENT HANDLER
-# ==========================================
-@pytgcalls.on_stream_end()
-async def on_stream_end(client, update):
-    chat_id = update.chat_id
-    print(f"🎵 Song ended in {chat_id}, checking queue...")
-    await play_next_song(chat_id)
-
 # ==========================================
 # ℹ️ MODULE INFO
 # ==========================================
@@ -279,5 +291,5 @@ __help__ = """
 • `/resume` - Resume playback
 • `/queue` - Check current list
 
-*Powered by XBitCode & RustyPipe*
+*Powered by XBitCode*
 """
