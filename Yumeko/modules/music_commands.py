@@ -318,18 +318,19 @@ async def stop_cmd(_, message):
         await message.reply("```\n❌ Nothing is playing\n```")
         return
     
-    # Check if user is admin - FIXED!
+    # SIMPLIFIED ADMIN CHECK
+    user_id = message.from_user.id
+    
     try:
-        member = await app.get_chat_member(chat_id, message.from_user.id)
-        
-        if member.status not in ["creator", "administrator"]:
-            await message.reply("```\n❌ Only admins can stop\n```")
-            return
-            
-    except Exception as e:
-        # If check fails, allow (don't block valid admins)
-        logger.error(f"Admin check error: {e}")
-        pass
+        member = await app.get_chat_member(chat_id, user_id)
+        user_status = member.status
+    except:
+        user_status = "unknown"
+    
+    # Only block regular members
+    if user_status == "member" or user_status == "restricted" or user_status == "left":
+        await message.reply("```\n❌ Only admins can stop\n```")
+        return
     
     clear_queue(chat_id)
     if chat_id in current_playing:
@@ -348,20 +349,28 @@ async def skip_cmd(_, message):
         await message.reply("```\n❌ Nothing to skip\n```")
         return
     
-    # Check if user is admin - FIXED!
+    # SIMPLIFIED ADMIN CHECK
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
     try:
-        member = await app.get_chat_member(message.chat.id, message.from_user.id)
+        member = await app.get_chat_member(chat_id, user_id)
+        user_status = member.status
         
-        # Check status properly
-        if member.status not in ["creator", "administrator"]:
-            await message.reply("```\n❌ Only admins can skip\n```")
-            return
-            
+        # Log for debugging
+        print(f"[SKIP] User: {message.from_user.first_name}, Status: {user_status}")
+        
     except Exception as e:
-        # If check fails, allow (don't block valid admins)
-        logger.error(f"Admin check error: {e}")
-        pass
-        
+        # If we can't check, assume they're allowed (fail open)
+        print(f"[SKIP ERROR] {e}")
+        user_status = "member"  # Default to member, will skip check below
+    
+    # Only block if we KNOW they're a regular member
+    if user_status == "member" or user_status == "restricted" or user_status == "left":
+        await message.reply("```\n❌ Only admins can skip\n```")
+        return
+    
+    # If creator, administrator, or check failed = allow
     # Show who skipped
     user_name = message.from_user.first_name
     await message.reply(f"```\n⏭️ Skipped by {user_name}\n```")
@@ -373,17 +382,16 @@ async def pause_cmd(_, message):
         await message.reply("```\n❌ Nothing playing\n```")
         return
     
-    # Check if user is admin - FIXED!
+    # SIMPLIFIED ADMIN CHECK
     try:
         member = await app.get_chat_member(message.chat.id, message.from_user.id)
-        
-        if member.status not in ["creator", "administrator"]:
-            await message.reply("```\n❌ Only admins can pause\n```")
-            return
-            
-    except Exception as e:
-        logger.error(f"Admin check error: {e}")
-        pass
+        user_status = member.status
+    except:
+        user_status = "unknown"
+    
+    if user_status == "member" or user_status == "restricted" or user_status == "left":
+        await message.reply("```\n❌ Only admins can pause\n```")
+        return
         
     try:
         await pytgcalls.pause_stream(message.chat.id)
@@ -397,17 +405,16 @@ async def resume_cmd(_, message):
         await message.reply("```\n❌ Nothing playing\n```")
         return
     
-    # Check if user is admin - FIXED!
+    # SIMPLIFIED ADMIN CHECK
     try:
         member = await app.get_chat_member(message.chat.id, message.from_user.id)
-        
-        if member.status not in ["creator", "administrator"]:
-            await message.reply("```\n❌ Only admins can resume\n```")
-            return
-            
-    except Exception as e:
-        logger.error(f"Admin check error: {e}")
-        pass
+        user_status = member.status
+    except:
+        user_status = "unknown"
+    
+    if user_status == "member" or user_status == "restricted" or user_status == "left":
+        await message.reply("```\n❌ Only admins can resume\n```")
+        return
         
     try:
         await pytgcalls.resume_stream(message.chat.id)
