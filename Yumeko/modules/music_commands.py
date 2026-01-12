@@ -336,15 +336,26 @@ async def queue_cmd(_, message):
     await message.reply(text)
 
 # ==========================================
-# 🎛️ CALLBACKS
+# 🎛️ CALLBACKS (ADMIN ONLY!)
 # ==========================================
 @app.on_callback_query(filters.regex(r"^(stop|skip|pause|resume|close)"))
 async def cb_handler(_, query):
     action = query.data
     chat_id = query.message.chat.id
+    user_id = query.from_user.id
     
     if action == "close":
         await query.message.delete()
+        return
+
+    # Check if user is admin
+    try:
+        member = await app.get_chat_member(chat_id, user_id)
+        if member.status not in ["creator", "administrator"]:
+            await query.answer("❌ Only admins can use this!", show_alert=True)
+            return
+    except:
+        await query.answer("❌ Error checking permissions", show_alert=True)
         return
 
     if action == "stop":
@@ -381,7 +392,7 @@ async def send_now_playing(chat_id, info):
             InlineKeyboardButton("⏹", callback_data="stop")
         ],
         [
-            InlineKeyboardButton("𝐒𝐔𝐌𝐌𝐎𝐍 𝐌𝐄 𝐍𝐎𝐖", url="https://t.me/MariaModBot?start=start")
+            InlineKeyboardButton("𝐒𝐔𝐌𝐌𝐎𝐍 𝐌𝐄 𝐍𝐎𝐖", url="https://t.me/MariaModBot?startgroup=true")
         ]
     ])
     
@@ -397,13 +408,11 @@ async def send_now_playing(chat_id, info):
     title = info['title'][:60] + ('...' if len(info['title']) > 60 else '')
     
     text = (
-        f"```\n"
-        f"♦️ STARTED STREAMING\n\n"
-        f"⭕ Title ➻: {title}\n\n"
-        f"⭕ Duration ➻: {duration_str}\n\n"
-        f"⭕ Requested by ➻: You\n\n"
-        f"♦️ Powered by ➻ Samurai Network\n"
-        f"```"
+        f"**♦️ STARTED STREAMING**\n\n"
+        f"**⭕ Title ➻:** {title}\n\n"
+        f"**⭕ Duration ➻:** {duration_str}\n\n"
+        f"**⭕ Requested by ➻:** You\n\n"
+        f"**♦️ Powered by ➻** Samurai Network"
     )
     
     try:
@@ -443,5 +452,5 @@ __help__ = """
 • `/resume` - Resume
 • `/queue` - View queue
 
-*Powered by Samurai*
+*Powered by XBitCode API*
 """
