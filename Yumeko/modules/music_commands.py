@@ -121,16 +121,24 @@ async def ensure_userbot_in_chat(chat_id: int, retries: int = 3):
         raise e
 
 # ==========================================
-# 🤖 AUTO-PLAY ENGINE
+# 🤖 AUTO-PLAY ENGINE (FIXED TIMER BUG!)
 # ==========================================
 async def auto_end_handler(chat_id, duration):
-    if duration > 0:
-        await asyncio.sleep(duration + 2)
-    else:
+    """Fixed: Only triggers if duration is reliable"""
+    # Don't auto-skip if duration is 0 or unreliable
+    if duration <= 0 or duration > 7200:  # Skip if > 2 hours (likely wrong)
         return
+    
+    # Add extra buffer time to prevent early skip
+    wait_time = duration + 5  # 5 seconds buffer instead of 2
+    await asyncio.sleep(wait_time)
 
+    # Double check if the SAME song is still playing
     if chat_id in current_playing:
-        await play_next_song(chat_id)
+        # Check if song file still exists (means it's the same song)
+        current_file = current_playing[chat_id].get('file_path')
+        if current_file and os.path.exists(current_file):
+            await play_next_song(chat_id)
 
 async def play_next_song(chat_id):
     next_song = get_next_song(chat_id)
@@ -276,21 +284,49 @@ async def play_command(client, message: Message):
 async def stop_cmd(_, message):
     chat_id = message.chat.id
     if chat_id not in current_playing:
-        await message.reply("```\n❌ Nothing playing\n```")
+        await message.reply("```\n❌ Nothing is playing\n```")
+        return
+    
+    # Check if user is admin
+    try:
+        member = await app.get_chat_member(chat_id, message.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await message.reply("```\n❌ Only admins can stop\n```")
+            return
+    except:
+        await message.reply("```\n❌ Error checking permissions\n```")
         return
     
     clear_queue(chat_id)
     if chat_id in current_playing:
         del current_playing[chat_id]
+        
     await pytgcalls.leave_call(chat_id)
-    await message.reply("```\n⏹️ Stopped\n```")
+    await message.reply(
+        "```\n╔════════════════════╗\n"
+        "║   ⏹️ Stopped        ║\n"
+        "╚════════════════════╝\n```"
+    )
 
 @app.on_message(filters.command("skip", config.COMMAND_PREFIXES) & filters.group)
 async def skip_cmd(_, message):
     if message.chat.id not in current_playing:
         await message.reply("```\n❌ Nothing to skip\n```")
         return
-    await message.reply("```\n⏭️ Skipping...\n```")
+    
+    # Check if user is admin
+    try:
+        member = await app.get_chat_member(message.chat.id, message.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await message.reply("```\n❌ Only admins can skip\n```")
+            return
+    except:
+        await message.reply("```\n❌ Error checking permissions\n```")
+        return
+        
+    # Show who skipped
+    user_name = message.from_user.first_name
+    await message.reply(f"```\n⏭️ Skipped by {user_name}\n```")
     await play_next_song(message.chat.id)
 
 @app.on_message(filters.command("pause", config.COMMAND_PREFIXES) & filters.group)
@@ -298,6 +334,17 @@ async def pause_cmd(_, message):
     if message.chat.id not in current_playing:
         await message.reply("```\n❌ Nothing playing\n```")
         return
+    
+    # Check if user is admin
+    try:
+        member = await app.get_chat_member(message.chat.id, message.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await message.reply("```\n❌ Only admins can pause\n```")
+            return
+    except:
+        await message.reply("```\n❌ Error checking permissions\n```")
+        return
+        
     try:
         await pytgcalls.pause_stream(message.chat.id)
         await message.reply("```\n⏸️ Paused\n```")
@@ -309,6 +356,17 @@ async def resume_cmd(_, message):
     if message.chat.id not in current_playing:
         await message.reply("```\n❌ Nothing playing\n```")
         return
+    
+    # Check if user is admin
+    try:
+        member = await app.get_chat_member(message.chat.id, message.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await message.reply("```\n❌ Only admins can resume\n```")
+            return
+    except:
+        await message.reply("```\n❌ Error checking permissions\n```")
+        return
+        
     try:
         await pytgcalls.resume_stream(message.chat.id)
         await message.reply("```\n▶️ Resumed\n```")
@@ -367,7 +425,8 @@ async def cb_handler(_, query):
         await query.answer("⏹️ Stopped")
         
     elif action == "skip":
-        await query.answer("⏭️ Skipped")
+        user_name = query.from_user.first_name
+        await query.answer(f"⏭️ Skipped by {user_name}")
         await play_next_song(chat_id)
         
     elif action == "pause":
@@ -408,11 +467,13 @@ async def send_now_playing(chat_id, info):
     title = info['title'][:60] + ('...' if len(info['title']) > 60 else '')
     
     text = (
-        f"**♦️ STARTED STREAMING**\n\n"
-        f"**⭕ Title ➻:** {title}\n\n"
-        f"**⭕ Duration ➻:** {duration_str}\n\n"
-        f"**⭕ Requested by ➻:** You\n\n"
-        f"**♦️ Powered by ➻** Samurai Network"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎵 **NOW PLAYING**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🎧 **Title**\n`{title}`\n\n"
+        f"⏱ **Duration:** `{duration_str}`\n\n"
+        f"👤 **Requested by:** You\n"
+        f"━━━━━━━━━━━━━━━━━━━━"
     )
     
     try:
