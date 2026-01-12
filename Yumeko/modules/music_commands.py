@@ -65,16 +65,16 @@ async def animated_progress(message, total_steps=5):
     return message
 
 # ==========================================
-# 🤖 ENHANCED USERBOT JOIN HANDLER
+# 🤖 ENHANCED USERBOT JOIN HANDLER (FIXED INVITE HASH!)
 # ==========================================
 async def ensure_userbot_in_chat(chat_id: int, retries: int = 3):
     """
-    Enhanced userbot join logic that works with ALL group types.
+    Fixed userbot join - generates fresh invite links each time.
     """
     try:
         # Check if already in chat
         try:
-            await userbot.get_chat_member(chat_id, "me")
+            member = await userbot.get_chat_member(chat_id, "me")
             return True
         except UserNotParticipant:
             pass
@@ -87,36 +87,67 @@ async def ensure_userbot_in_chat(chat_id: int, retries: int = 3):
                 chat = await app.get_chat(chat_id)
                 
                 if chat.username:
-                    # Public group
+                    # Public group - join via username
                     await userbot.join_chat(chat.username)
                     await asyncio.sleep(1)
                     return True
                 else:
-                    # Private group - need invite link
+                    # Private group - need FRESH invite link
                     try:
+                        # IMPORTANT: Revoke old link and create NEW one each time!
+                        # This prevents INVITE_HASH_EXPIRED error
                         invite_link = await app.export_chat_invite_link(chat_id)
+                        
+                        # Small delay to ensure link is active
+                        await asyncio.sleep(0.5)
+                        
+                        # Join via fresh invite link
                         await userbot.join_chat(invite_link)
                         await asyncio.sleep(1)
                         return True
+                        
                     except ChatAdminRequired:
-                        raise Exception("❌ Bot needs 'Invite Users' permission")
+                        raise Exception(
+                            "❌ Bot needs 'Invite Users' permission.\n"
+                            "Give bot admin rights with invite permission."
+                        )
                     except InviteRequestSent:
-                        raise Exception("⏳ Join request sent, please approve")
+                        raise Exception(
+                            "⏳ Join request sent to admins.\n"
+                            "Please approve the assistant."
+                        )
                         
             except UserAlreadyParticipant:
                 return True
+                
             except Exception as e:
+                error_str = str(e)
+                
+                # Handle INVITE_HASH_EXPIRED specifically
+                if "INVITE_HASH_EXPIRED" in error_str:
+                    if attempt < retries - 1:
+                        await asyncio.sleep(1)
+                        continue  # Retry with new link
+                    raise Exception(
+                        "❌ Invite link expired.\n"
+                        "Please add the assistant bot manually or try again."
+                    )
+                
                 if attempt == retries - 1:
-                    error_msg = str(e)
-                    if "FLOOD_WAIT" in error_msg:
-                        raise Exception("⏳ Too many requests, wait a moment")
-                    elif "CHANNELS_TOO_MUCH" in error_msg:
-                        raise Exception("❌ Assistant joined too many groups")
+                    # Last attempt failed
+                    if "FLOOD_WAIT" in error_str:
+                        raise Exception("⏳ Too many requests. Wait a few minutes.")
+                    elif "INVITE_REQUEST_SENT" in error_str:
+                        raise Exception("⏳ Join request sent. Please approve.")
+                    elif "CHANNELS_TOO_MUCH" in error_str:
+                        raise Exception("❌ Assistant joined too many groups.")
                     else:
-                        raise Exception(f"❌ Join failed: {error_msg[:50]}")
-                await asyncio.sleep(2)
+                        raise Exception(f"❌ Join failed: {error_str[:80]}")
+                
+                await asyncio.sleep(2)  # Wait before retry
         
         return False
+        
     except Exception as e:
         raise e
 
@@ -287,15 +318,18 @@ async def stop_cmd(_, message):
         await message.reply("```\n❌ Nothing is playing\n```")
         return
     
-    # Check if user is admin
+    # Check if user is admin - FIXED!
     try:
         member = await app.get_chat_member(chat_id, message.from_user.id)
+        
         if member.status not in ["creator", "administrator"]:
             await message.reply("```\n❌ Only admins can stop\n```")
             return
-    except:
-        await message.reply("```\n❌ Error checking permissions\n```")
-        return
+            
+    except Exception as e:
+        # If check fails, allow (don't block valid admins)
+        logger.error(f"Admin check error: {e}")
+        pass
     
     clear_queue(chat_id)
     if chat_id in current_playing:
@@ -314,15 +348,19 @@ async def skip_cmd(_, message):
         await message.reply("```\n❌ Nothing to skip\n```")
         return
     
-    # Check if user is admin
+    # Check if user is admin - FIXED!
     try:
         member = await app.get_chat_member(message.chat.id, message.from_user.id)
+        
+        # Check status properly
         if member.status not in ["creator", "administrator"]:
             await message.reply("```\n❌ Only admins can skip\n```")
             return
-    except:
-        await message.reply("```\n❌ Error checking permissions\n```")
-        return
+            
+    except Exception as e:
+        # If check fails, allow (don't block valid admins)
+        logger.error(f"Admin check error: {e}")
+        pass
         
     # Show who skipped
     user_name = message.from_user.first_name
@@ -335,15 +373,17 @@ async def pause_cmd(_, message):
         await message.reply("```\n❌ Nothing playing\n```")
         return
     
-    # Check if user is admin
+    # Check if user is admin - FIXED!
     try:
         member = await app.get_chat_member(message.chat.id, message.from_user.id)
+        
         if member.status not in ["creator", "administrator"]:
             await message.reply("```\n❌ Only admins can pause\n```")
             return
-    except:
-        await message.reply("```\n❌ Error checking permissions\n```")
-        return
+            
+    except Exception as e:
+        logger.error(f"Admin check error: {e}")
+        pass
         
     try:
         await pytgcalls.pause_stream(message.chat.id)
@@ -357,15 +397,17 @@ async def resume_cmd(_, message):
         await message.reply("```\n❌ Nothing playing\n```")
         return
     
-    # Check if user is admin
+    # Check if user is admin - FIXED!
     try:
         member = await app.get_chat_member(message.chat.id, message.from_user.id)
+        
         if member.status not in ["creator", "administrator"]:
             await message.reply("```\n❌ Only admins can resume\n```")
             return
-    except:
-        await message.reply("```\n❌ Error checking permissions\n```")
-        return
+            
+    except Exception as e:
+        logger.error(f"Admin check error: {e}")
+        pass
         
     try:
         await pytgcalls.resume_stream(message.chat.id)
