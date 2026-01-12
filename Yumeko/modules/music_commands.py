@@ -441,14 +441,12 @@ async def cb_handler(_, query):
 # 🎨 COMPACT NOW PLAYING UI (like your reference)
 # ==========================================
 async def send_now_playing(chat_id, info):
-    """Clean, compact now playing message with thumbnail."""
+    """Clean, compact now playing message with mini-games!"""
     
     buttons = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⏸", callback_data="pause"),
-            InlineKeyboardButton("▶️", callback_data="resume"),
-            InlineKeyboardButton("⏭", callback_data="skip"),
-            InlineKeyboardButton("⏹", callback_data="stop")
+            InlineKeyboardButton("🎮 Tic Tac Toe", callback_data="game_tictactoe"),
+            InlineKeyboardButton("✊ Rock Paper", callback_data="game_rps")
         ],
         [
             InlineKeyboardButton("𝐒𝐔𝐌𝐌𝐎𝐍 𝐌𝐄 𝐍𝐎𝐖", url="https://t.me/MariaModBot?startgroup=true")
@@ -469,10 +467,9 @@ async def send_now_playing(chat_id, info):
     text = (
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"🎵 **NOW PLAYING**\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🎧 **Title**\n`{title}`\n\n"
-        f"⏱ **Duration:** `{duration_str}`\n\n"
-        f"👤 **Requested by:** You\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎧 `{title}`\n"
+        f"⏱ `{duration_str}` | 👤 You\n"
         f"━━━━━━━━━━━━━━━━━━━━"
     )
     
