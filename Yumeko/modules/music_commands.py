@@ -1,14 +1,18 @@
 """
-Music Player Module - Clean Professional Edition (v8)
-Features: Animated loading bars, compact output, beautiful design
+Music Player Module - Enhanced Commands & Events (Professional Edition)
+Features: Professional UI, Fixed thumbnails, Fixed userbot joining for all group types
 """
 
 import asyncio
 import os
+import logging
 from pyrogram import filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.errors import UserAlreadyParticipant, ChatAdminRequired, UserNotParticipant, InviteRequestSent
 from pytgcalls.types import MediaStream, AudioQuality
+
+# Setup Logger - THIS WAS MISSING!
+logger = logging.getLogger(__name__)
 
 # Import Core Logic
 from Yumeko.modules.music import (
@@ -193,6 +197,7 @@ async def auto_end_handler(chat_id, duration):
     await play_next_song(chat_id)
 
 async def play_next_song(chat_id):
+    """Handles playing the next song or leaving"""
     next_song = get_next_song(chat_id)
     
     if next_song:
@@ -202,19 +207,31 @@ async def play_next_song(chat_id):
                 MediaStream(next_song['file_path'], audio_parameters=AudioQuality.HIGH)
             )
             current_playing[chat_id] = next_song
+            
+            # Start timer for new song (with validation!)
+            if next_song['duration'] > 30:
+                logger.info(f"Auto-timer started for next song: {next_song['duration']}s")
+                asyncio.create_task(auto_end_handler(chat_id, next_song['duration']))
+            else:
+                logger.warning(f"Skipping auto-timer for next song - duration: {next_song['duration']}s")
+            
             await send_now_playing(chat_id, next_song)
-            asyncio.create_task(auto_end_handler(chat_id, next_song['duration']))
+            
         except Exception as e:
-            print(f"Error: {e}")
+            logger.error(f"Error playing next: {e}")
             await pytgcalls.leave_call(chat_id)
     else:
+        # Empty Queue -> Leave
         if chat_id in current_playing:
             del current_playing[chat_id]
-        await app.send_message(chat_id, "```\n✅ Queue finished\n```")
-        await asyncio.sleep(2)
+        
         try:
+            await app.send_message(chat_id, "```\n✅ Queue finished\n```")
+            await asyncio.sleep(2)
             await pytgcalls.leave_call(chat_id)
-        except:
+            logger.info(f"Left VC - queue finished for chat {chat_id}")
+        except Exception as e:
+            logger.error(f"Error leaving VC: {e}")
             pass
 
 # ==========================================
