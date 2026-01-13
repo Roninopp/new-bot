@@ -120,7 +120,7 @@ async def get_stream_link(video_id: str, retry: int = 0):
 
 async def download_audio(url: str):
     """
-    Enhanced downloader with better error handling.
+    Enhanced downloader with better error handling and validation.
     """
     logger.info(f"📥 [PROCESS] Processing: {url}")
     
@@ -133,10 +133,12 @@ async def download_audio(url: str):
              raise Exception("Could not extract video ID")
     
     video_id = match.group(1)
+    logger.info(f"📥 Video ID: {video_id}")
     
     # 2. Get Metadata (Soft Fail - Don't crash here!)
     try:
         meta = await get_video_info(video_id)
+        logger.info(f"✅ Metadata: {meta['title']} - Duration: {meta['duration']}s")
     except Exception as e:
         logger.error(f"Metadata failed: {e}")
         meta = {
@@ -152,19 +154,27 @@ async def download_audio(url: str):
     stream_url, api_title, error = await get_stream_link(video_id)
     
     if error:
+        # Log detailed error
+        logger.error(f"API Error for {video_id}: {error}")
         raise Exception(error)
     
     if not stream_url:
-        raise Exception("Failed to get download link from API")
+        raise Exception("API returned empty audio URL")
+    
+    # Validate stream URL
+    if not stream_url.startswith('http'):
+        logger.error(f"Invalid stream URL: {stream_url}")
+        raise Exception("API returned invalid download URL")
     
     # Use API title if metadata failed
     if title.startswith("Music Track") and api_title:
         title = api_title
+        logger.info(f"Using API title: {title}")
 
     # 4. Download the File (WITH RETRY!)
     file_path = os.path.join(DOWNLOAD_FOLDER, f"{video_id}.mp3")
     
-    # Check if already downloaded
+    # Check if already downloaded and valid
     if os.path.exists(file_path) and os.path.getsize(file_path) > 100000:  # > 100KB
         logger.info(f"✅ Using cached file: {title}")
         return {
@@ -177,46 +187,72 @@ async def download_audio(url: str):
         }
     
     # Download with retry
-    logger.info(f"📥 Downloading: {title}")
-    max_retries = 3
+    logger.info(f"📥 Downloading from: {stream_url[:100]}")
+    max_retries = 2  # Reduced to 2 for faster failure
     
     for attempt in range(max_retries):
         try:
             headers = {
                 "x-api-key": API_KEY,
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "*/*",
+                "Connection": "keep-alive"
             }
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     stream_url, 
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=60)
+                    timeout=aiohttp.ClientTimeout(total=90),  # Increased timeout
+                    allow_redirects=True
                 ) as resp:
+                    
+                    # Log response details
+                    logger.info(f"Download response: {resp.status} - Content-Type: {resp.content_type}")
+                    
                     if resp.status == 200:
                         # Download in chunks
                         with open(file_path, 'wb') as f:
                             downloaded = 0
-                            async for chunk in resp.content.iter_chunked(1024*1024):  # 1MB chunks
+                            chunk_count = 0
+                            async for chunk in resp.content.iter_chunked(1024*512):  # 512KB chunks
                                 if chunk:
                                     f.write(chunk)
                                     downloaded += len(chunk)
+                                    chunk_count += 1
+                                    if chunk_count % 10 == 0:  # Log every ~5MB
+                                        logger.info(f"Downloaded: {downloaded / 1024 / 1024:.2f}MB")
                         
                         # Verify download
-                        if os.path.exists(file_path) and os.path.getsize(file_path) > 50000:  # > 50KB
-                            logger.info(f"✅ Downloaded successfully: {downloaded} bytes")
+                        file_size = os.path.getsize(file_path)
+                        logger.info(f"✅ Download complete: {file_size / 1024 / 1024:.2f}MB")
+                        
+                        if file_size > 50000:  # > 50KB
                             break
                         else:
-                            raise Exception("Downloaded file too small")
+                            logger.warning(f"File too small: {file_size} bytes")
+                            raise Exception("Downloaded file is too small (corrupted)")
                     
                     elif resp.status == 400:
-                        raise Exception("Download failed: Invalid request (400)")
+                        error_text = await resp.text()
+                        logger.error(f"API 400 Error: {error_text[:200]}")
+                        raise Exception(
+                            "This video cannot be downloaded. It may be:\n"
+                            "• Age-restricted or private\n"
+                            "• Geo-blocked in your region\n"
+                            "• Removed or unavailable\n"
+                            "Try a different song!"
+                        )
+                    elif resp.status == 403:
+                        raise Exception("Access forbidden (403). API key issue or video blocked.")
+                    elif resp.status == 404:
+                        raise Exception("Audio not found (404). Video may be unavailable.")
                     elif resp.status == 500:
                         if attempt < max_retries - 1:
                             logger.warning(f"API 500 error, retry {attempt + 1}/{max_retries}")
                             await asyncio.sleep(3)
                             continue
-                        raise Exception("Download failed: API server error (500)")
+                        raise Exception("API server error (500). Try again later.")
                     else:
                         raise Exception(f"Download failed: HTTP {resp.status}")
         
@@ -225,20 +261,35 @@ async def download_audio(url: str):
                 logger.warning(f"Timeout, retry {attempt + 1}/{max_retries}")
                 await asyncio.sleep(2)
                 continue
-            raise Exception("Download timeout after retries")
+            raise Exception("Download timeout. Check your internet or try again.")
         
-        except Exception as e:
+        except aiohttp.ClientError as e:
             if attempt < max_retries - 1:
-                logger.warning(f"Download error: {e}, retry {attempt + 1}/{max_retries}")
+                logger.warning(f"Network error: {e}, retry {attempt + 1}/{max_retries}")
                 await asyncio.sleep(2)
                 continue
-            raise Exception(f"Download failed: {str(e)[:100]}")
+            raise Exception(f"Network error: {str(e)[:80]}")
+        
+        except Exception as e:
+            error_str = str(e)
+            if "too small" in error_str or "corrupted" in error_str:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Corrupted download, retry {attempt + 1}/{max_retries}")
+                    await asyncio.sleep(2)
+                    continue
+            raise e
 
     # 5. Final verification
-    if not os.path.exists(file_path) or os.path.getsize(file_path) < 50000:
-        raise Exception("Download verification failed")
+    if not os.path.exists(file_path):
+        raise Exception("Download failed: File was not created")
+    
+    file_size = os.path.getsize(file_path)
+    if file_size < 50000:
+        logger.error(f"File too small: {file_size} bytes")
+        raise Exception("Download failed: File is corrupted or incomplete")
 
     # 6. Return Data
+    logger.info(f"✅ Ready to play: {title}")
     return {
         'title': title,
         'duration': duration,
