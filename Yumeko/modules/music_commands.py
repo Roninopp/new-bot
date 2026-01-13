@@ -155,21 +155,42 @@ async def ensure_userbot_in_chat(chat_id: int, retries: int = 3):
 # 🤖 AUTO-PLAY ENGINE (FIXED TIMER BUG!)
 # ==========================================
 async def auto_end_handler(chat_id, duration):
-    """Fixed: Only triggers if duration is reliable"""
-    # Don't auto-skip if duration is 0 or unreliable
-    if duration <= 0 or duration > 7200:  # Skip if > 2 hours (likely wrong)
-        return
+    """
+    FIXED: Properly validates duration before starting timer.
+    Prevents premature auto-skip!
+    """
+    # CRITICAL FIX: Don't trust duration if it's unreliable!
+    if duration <= 0:
+        logger.info(f"[AUTO-SKIP] Duration is 0, skipping auto-timer for chat {chat_id}")
+        return  # No auto-skip for unknown duration
     
-    # Add extra buffer time to prevent early skip
-    wait_time = duration + 5  # 5 seconds buffer instead of 2
+    if duration < 30:
+        logger.warning(f"[AUTO-SKIP] Suspicious short duration: {duration}s - probably wrong metadata!")
+        return  # Songs shorter than 30 seconds are likely metadata errors
+    
+    if duration > 7200:  # > 2 hours
+        logger.warning(f"[AUTO-SKIP] Duration too long: {duration}s - might be wrong")
+        return  # Very long durations might be wrong
+    
+    # Add BIG buffer to prevent early skip (song still playing)
+    wait_time = duration + 10  # 10 seconds buffer (was 5, now 10!)
+    logger.info(f"[AUTO-SKIP] Chat {chat_id}: Will auto-skip in {wait_time}s (song: {duration}s)")
+    
     await asyncio.sleep(wait_time)
 
-    # Double check if the SAME song is still playing
-    if chat_id in current_playing:
-        # Check if song file still exists (means it's the same song)
-        current_file = current_playing[chat_id].get('file_path')
-        if current_file and os.path.exists(current_file):
-            await play_next_song(chat_id)
+    # IMPORTANT: Check if same song is STILL playing
+    if chat_id not in current_playing:
+        logger.info(f"[AUTO-SKIP] Chat {chat_id}: No longer playing, skip cancelled")
+        return
+    
+    # Verify the song file still exists (ensures same song)
+    current_file = current_playing[chat_id].get('file_path')
+    if not current_file or not os.path.exists(current_file):
+        logger.info(f"[AUTO-SKIP] Chat {chat_id}: File doesn't exist, skip cancelled")
+        return
+    
+    logger.info(f"[AUTO-SKIP] Chat {chat_id}: Triggering auto-skip now!")
+    await play_next_song(chat_id)
 
 async def play_next_song(chat_id):
     next_song = get_next_song(chat_id)
@@ -299,8 +320,15 @@ async def play_command(client, message: Message):
         )
         
         current_playing[message.chat.id] = info
+        
+        # CRITICAL: Only start timer if duration is valid!
+        if info['duration'] > 30:  # Only auto-skip songs longer than 30 seconds
+            logger.info(f"Starting auto-timer for {info['title']} - {info['duration']}s")
+            asyncio.create_task(auto_end_handler(message.chat.id, info['duration']))
+        else:
+            logger.warning(f"Skipping auto-timer - duration too short or invalid: {info['duration']}s")
+        
         await send_now_playing(message.chat.id, info)
-        asyncio.create_task(auto_end_handler(message.chat.id, info['duration']))
         
         await status.delete()
 
