@@ -1,6 +1,6 @@
 """
-Music Player Module - Enhanced Commands & Events (Professional Edition)
-Features: Professional UI, Fixed thumbnails, Fixed userbot joining for all group types
+Music Player Module - BULLETPROOF Edition (v9)
+Features: Ghost state prevention, VC end detection, robust cleanup
 """
 
 import asyncio
@@ -10,8 +10,10 @@ from pyrogram import filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.errors import UserAlreadyParticipant, ChatAdminRequired, UserNotParticipant, InviteRequestSent
 from pytgcalls.types import MediaStream, AudioQuality
+from pytgcalls import PyTgCalls
+from pytgcalls.exceptions import GroupCallNotFound, NoActiveGroupCall
 
-# Setup Logger - THIS WAS MISSING!
+# Setup Logger
 logger = logging.getLogger(__name__)
 
 # Import Core Logic
@@ -35,50 +37,90 @@ from Yumeko.decorator.save import save
 from Yumeko.decorator.errors import error
 
 # ==========================================
-# 🎨 ANIMATED PROGRESS BAR
+# 🧹 CLEANUP & STATE MANAGEMENT
 # ==========================================
-async def animated_progress(message, total_steps=5):
-    """
-    Shows animated loading bar with stages.
-    """
-    stages = [
-        ("🔍 Searching", "█▱▱▱▱▱▱▱▱▱", 10),
-        ("📡 Fetching", "███▱▱▱▱▱▱▱", 30),
-        ("📥 Downloading", "█████▱▱▱▱▱", 50),
-        ("🎵 Processing", "███████▱▱▱", 70),
-        ("🤖 Joining VC", "█████████▱", 90),
-        ("✅ Ready", "██████████", 100)
-    ]
-    
-    for stage, bar, percent in stages:
-        text = (
-            f"```\n"
-            f"╔════════════════════╗\n"
-            f"║  {stage:^18}║\n"
-            f"╠════════════════════╣\n"
-            f"║ {bar} {percent}% ║\n"
-            f"╚════════════════════╝\n"
-            f"```"
-        )
+async def force_cleanup(chat_id: int):
+    """Force cleanup of all states and leave VC"""
+    try:
+        # Clear queue
+        clear_queue(chat_id)
+        
+        # Clear current playing
+        if chat_id in current_playing:
+            del current_playing[chat_id]
+        
+        # Try to leave call
         try:
-            await message.edit(text)
-            await asyncio.sleep(0.5)
-        except:
-            pass
-    
-    return message
+            await pytgcalls.leave_call(chat_id)
+        except (GroupCallNotFound, NoActiveGroupCall):
+            pass  # Already not in call
+        except Exception as e:
+            logger.error(f"Error leaving call: {e}")
+        
+        logger.info(f"[CLEANUP] Chat {chat_id} cleaned up successfully")
+        return True
+    except Exception as e:
+        logger.error(f"[CLEANUP] Error: {e}")
+        return False
+
+async def validate_vc_state(chat_id: int) -> bool:
+    """Check if bot is actually in VC and playing"""
+    try:
+        # Check if pytgcalls thinks we're in a call
+        if chat_id in pytgcalls.calls:
+            return True
+        return False
+    except:
+        return False
 
 # ==========================================
-# 🤖 ENHANCED USERBOT JOIN HANDLER (FIXED INVITE HASH!)
+# 🎧 VOICE CHAT END DETECTION
+# ==========================================
+@pytgcalls.on_stream_end()
+async def on_stream_end(client: PyTgCalls, update):
+    """Triggered when song ends OR VC ends"""
+    chat_id = update.chat_id
+    
+    logger.info(f"[STREAM_END] Chat {chat_id}")
+    
+    # Check if VC is still active
+    try:
+        # Try to get chat
+        chat = await app.get_chat(chat_id)
+        
+        # If we're here, chat exists, try next song
+        await play_next_song(chat_id)
+        
+    except Exception as e:
+        # VC might have ended, cleanup
+        logger.warning(f"[STREAM_END] VC likely ended for {chat_id}: {e}")
+        await force_cleanup(chat_id)
+
+@pytgcalls.on_left()
+async def on_left_vc(client: PyTgCalls, chat_id: int):
+    """Triggered when bot leaves VC (kicked or VC ended)"""
+    logger.info(f"[LEFT_VC] Chat {chat_id}")
+    await force_cleanup(chat_id)
+
+# ==========================================
+# 🤖 ENHANCED USERBOT JOIN HANDLER
 # ==========================================
 async def ensure_userbot_in_chat(chat_id: int, retries: int = 3):
     """
-    Fixed userbot join - generates fresh invite links each time.
+    Fixed userbot join with state validation.
     """
     try:
+        # First, cleanup any ghost states
+        if chat_id in current_playing:
+            is_actually_playing = await validate_vc_state(chat_id)
+            if not is_actually_playing:
+                logger.warning(f"[JOIN] Ghost state detected for {chat_id}, cleaning up")
+                await force_cleanup(chat_id)
+        
         # Check if already in chat
         try:
             member = await userbot.get_chat_member(chat_id, "me")
+            logger.info(f"[JOIN] Userbot already in chat {chat_id}")
             return True
         except UserNotParticipant:
             pass
@@ -91,151 +133,112 @@ async def ensure_userbot_in_chat(chat_id: int, retries: int = 3):
                 chat = await app.get_chat(chat_id)
                 
                 if chat.username:
-                    # Public group - join via username
                     await userbot.join_chat(chat.username)
                     await asyncio.sleep(1)
+                    logger.info(f"[JOIN] Joined public chat {chat_id}")
                     return True
                 else:
-                    # Private group - need FRESH invite link
                     try:
-                        # IMPORTANT: Revoke old link and create NEW one each time!
-                        # This prevents INVITE_HASH_EXPIRED error
                         invite_link = await app.export_chat_invite_link(chat_id)
-                        
-                        # Small delay to ensure link is active
                         await asyncio.sleep(0.5)
-                        
-                        # Join via fresh invite link
                         await userbot.join_chat(invite_link)
                         await asyncio.sleep(1)
+                        logger.info(f"[JOIN] Joined private chat {chat_id}")
                         return True
-                        
                     except ChatAdminRequired:
-                        raise Exception(
-                            "❌ Bot needs 'Invite Users' permission.\n"
-                            "Give bot admin rights with invite permission."
-                        )
+                        raise Exception("❌ Bot needs 'Invite Users' permission")
                     except InviteRequestSent:
-                        raise Exception(
-                            "⏳ Join request sent to admins.\n"
-                            "Please approve the assistant."
-                        )
+                        raise Exception("⏳ Join request sent, please approve")
                         
             except UserAlreadyParticipant:
                 return True
-                
             except Exception as e:
                 error_str = str(e)
-                
-                # Handle INVITE_HASH_EXPIRED specifically
-                if "INVITE_HASH_EXPIRED" in error_str:
-                    if attempt < retries - 1:
-                        await asyncio.sleep(1)
-                        continue  # Retry with new link
-                    raise Exception(
-                        "❌ Invite link expired.\n"
-                        "Please add the assistant bot manually or try again."
-                    )
-                
+                if "INVITE_HASH_EXPIRED" in error_str and attempt < retries - 1:
+                    await asyncio.sleep(1)
+                    continue
                 if attempt == retries - 1:
-                    # Last attempt failed
                     if "FLOOD_WAIT" in error_str:
-                        raise Exception("⏳ Too many requests. Wait a few minutes.")
-                    elif "INVITE_REQUEST_SENT" in error_str:
-                        raise Exception("⏳ Join request sent. Please approve.")
-                    elif "CHANNELS_TOO_MUCH" in error_str:
-                        raise Exception("❌ Assistant joined too many groups.")
+                        raise Exception("⏳ Too many requests, wait a moment")
                     else:
                         raise Exception(f"❌ Join failed: {error_str[:80]}")
-                
-                await asyncio.sleep(2)  # Wait before retry
+                await asyncio.sleep(2)
         
         return False
-        
     except Exception as e:
         raise e
 
 # ==========================================
-# 🤖 AUTO-PLAY ENGINE (FIXED TIMER BUG!)
+# 🤖 ROBUST AUTO-PLAY ENGINE
 # ==========================================
 async def auto_end_handler(chat_id, duration):
-    """
-    FIXED: Properly validates duration before starting timer.
-    Prevents premature auto-skip!
-    """
-    # CRITICAL FIX: Don't trust duration if it's unreliable!
-    if duration <= 0:
-        logger.info(f"[AUTO-SKIP] Duration is 0, skipping auto-timer for chat {chat_id}")
-        return  # No auto-skip for unknown duration
+    """Timer-based auto-skip with state validation"""
+    if duration <= 0 or duration < 30 or duration > 7200:
+        logger.info(f"[AUTO-SKIP] Invalid duration {duration}s for chat {chat_id}")
+        return
     
-    if duration < 30:
-        logger.warning(f"[AUTO-SKIP] Suspicious short duration: {duration}s - probably wrong metadata!")
-        return  # Songs shorter than 30 seconds are likely metadata errors
-    
-    if duration > 7200:  # > 2 hours
-        logger.warning(f"[AUTO-SKIP] Duration too long: {duration}s - might be wrong")
-        return  # Very long durations might be wrong
-    
-    # Add BIG buffer to prevent early skip (song still playing)
-    wait_time = duration + 10  # 10 seconds buffer (was 5, now 10!)
-    logger.info(f"[AUTO-SKIP] Chat {chat_id}: Will auto-skip in {wait_time}s (song: {duration}s)")
+    wait_time = duration + 10
+    logger.info(f"[AUTO-SKIP] Chat {chat_id}: Timer set for {wait_time}s")
     
     await asyncio.sleep(wait_time)
 
-    # IMPORTANT: Check if same song is STILL playing
+    # Validate state before auto-skip
     if chat_id not in current_playing:
-        logger.info(f"[AUTO-SKIP] Chat {chat_id}: No longer playing, skip cancelled")
+        logger.info(f"[AUTO-SKIP] Chat {chat_id}: Not playing anymore")
         return
     
-    # Verify the song file still exists (ensures same song)
-    current_file = current_playing[chat_id].get('file_path')
-    if not current_file or not os.path.exists(current_file):
-        logger.info(f"[AUTO-SKIP] Chat {chat_id}: File doesn't exist, skip cancelled")
+    # Check if actually in VC
+    is_in_vc = await validate_vc_state(chat_id)
+    if not is_in_vc:
+        logger.warning(f"[AUTO-SKIP] Chat {chat_id}: Not in VC, cleaning up")
+        await force_cleanup(chat_id)
         return
     
-    logger.info(f"[AUTO-SKIP] Chat {chat_id}: Triggering auto-skip now!")
+    logger.info(f"[AUTO-SKIP] Chat {chat_id}: Triggering next song")
     await play_next_song(chat_id)
 
 async def play_next_song(chat_id):
-    """Handles playing the next song or leaving"""
+    """Play next song with state validation"""
     next_song = get_next_song(chat_id)
     
     if next_song:
         try:
+            # Validate we're in VC before playing
+            is_in_vc = await validate_vc_state(chat_id)
+            if not is_in_vc:
+                logger.warning(f"[NEXT_SONG] Not in VC for {chat_id}, rejoining...")
+                await ensure_userbot_in_chat(chat_id)
+                await asyncio.sleep(1)
+            
             await pytgcalls.play(
                 chat_id,
                 MediaStream(next_song['file_path'], audio_parameters=AudioQuality.HIGH)
             )
             current_playing[chat_id] = next_song
             
-            # Start timer for new song (with validation!)
             if next_song['duration'] > 30:
-                logger.info(f"Auto-timer started for next song: {next_song['duration']}s")
                 asyncio.create_task(auto_end_handler(chat_id, next_song['duration']))
-            else:
-                logger.warning(f"Skipping auto-timer for next song - duration: {next_song['duration']}s")
             
             await send_now_playing(chat_id, next_song)
+            logger.info(f"[NEXT_SONG] Playing: {next_song['title']}")
             
+        except (GroupCallNotFound, NoActiveGroupCall):
+            logger.error(f"[NEXT_SONG] VC not active for {chat_id}")
+            await force_cleanup(chat_id)
         except Exception as e:
-            logger.error(f"Error playing next: {e}")
-            await pytgcalls.leave_call(chat_id)
+            logger.error(f"[NEXT_SONG] Error: {e}")
+            await force_cleanup(chat_id)
     else:
-        # Empty Queue -> Leave
-        if chat_id in current_playing:
-            del current_playing[chat_id]
-        
+        # Queue empty
+        logger.info(f"[NEXT_SONG] Queue empty for {chat_id}")
+        await force_cleanup(chat_id)
         try:
             await app.send_message(chat_id, "```\n✅ Queue finished\n```")
-            await asyncio.sleep(2)
-            await pytgcalls.leave_call(chat_id)
-            logger.info(f"Left VC - queue finished for chat {chat_id}")
-        except Exception as e:
-            logger.error(f"Error leaving VC: {e}")
+        except:
             pass
 
 # ==========================================
-# 🎵 PLAY COMMAND WITH ANIMATION
+# 🎵 PLAY COMMAND (BULLETPROOF)
 # ==========================================
 @app.on_message(filters.command("play", config.COMMAND_PREFIXES) & filters.group)
 @error
@@ -243,150 +246,142 @@ async def play_next_song(chat_id):
 async def play_command(client, message: Message):
     if len(message.command) < 2:
         await message.reply(
-            "```\n"
-            "╔════════════════════╗\n"
-            "║   Music Player 🎵  ║\n"
-            "╚════════════════════╝\n"
-            "```\n"
+            "```\n╔════════════════════╗\n║   Music Player 🎵  ║\n╚════════════════════╝\n```\n"
             "**Usage:** `/play <song name>`"
         )
         return
 
     query = message.text.split(maxsplit=1)[1].strip()
-    
-    # Start animated progress
-    status = await message.reply("```\n🔍 Initializing...\n```")
+    status = await message.reply("```\n🔍 Searching...\n```")
 
     try:
-        # Animate: Searching
-        await status.edit(
-            "```\n"
-            "╔════════════════════╗\n"
-            "║   🔍 Searching...  ║\n"
-            "╠════════════════════╣\n"
-            "║ ██▱▱▱▱▱▱▱▱ 20%    ║\n"
-            "╚════════════════════╝\n"
-            "```"
-        )
+        # Search
+        await status.edit("```\n╔════════════════════╗\n║  🔍 Searching...   ║\n╠════════════════════╣\n║ ██▱▱▱▱▱▱▱▱ 20%    ║\n╚════════════════════╝\n```")
         
         url = await search_youtube(query)
         if not url:
-            await status.edit("```\n❌ Song not found\n```")
+            await status.edit("```\n❌ Song not found\n```\nTry `/reboot` if stuck")
             return
 
-        # Animate: Downloading
-        await status.edit(
-            "```\n"
-            "╔════════════════════╗\n"
-            "║  📥 Downloading... ║\n"
-            "╠════════════════════╣\n"
-            "║ █████▱▱▱▱▱ 50%    ║\n"
-            "╚════════════════════╝\n"
-            "```"
-        )
+        # Download
+        await status.edit("```\n╔════════════════════╗\n║ 📥 Downloading...  ║\n╠════════════════════╣\n║ █████▱▱▱▱▱ 50%    ║\n╚════════════════════╝\n```")
         
         info = await download_audio(url)
 
-        # Check if already playing (queue)
+        # Check if already playing
         if message.chat.id in current_playing:
-            add_to_queue(message.chat.id, info)
-            queue = get_queue(message.chat.id)
-            position = len(queue)
-            
-            mins = info['duration'] // 60
-            secs = info['duration'] % 60
-            
-            await status.edit(
-                f"```\n"
-                f"╔════════════════════╗\n"
-                f"║  ✅ Added to Queue ║\n"
-                f"╚════════════════════╝\n"
-                f"```\n"
-                f"**📍 Position:** `#{position}`\n"
-                f"**⏱ Duration:** `{mins}:{secs:02d}`"
-            )
-            return
+            # Validate state
+            is_valid = await validate_vc_state(message.chat.id)
+            if not is_valid:
+                logger.warning(f"[PLAY] Ghost state detected, cleaning up")
+                await force_cleanup(message.chat.id)
+                # Continue to play as new
+            else:
+                # Add to queue
+                add_to_queue(message.chat.id, info)
+                position = len(get_queue(message.chat.id))
+                mins, secs = info['duration'] // 60, info['duration'] % 60
+                await status.edit(
+                    f"```\n╔════════════════════╗\n║ ✅ Added to Queue  ║\n╚════════════════════╝\n```\n"
+                    f"**📍 Position:** `#{position}`\n**⏱ Duration:** `{mins}:{secs:02d}`"
+                )
+                return
 
-        # Animate: Joining VC
-        await status.edit(
-            "```\n"
-            "╔════════════════════╗\n"
-            "║  🤖 Joining VC...  ║\n"
-            "╠════════════════════╣\n"
-            "║ ████████▱▱ 80%    ║\n"
-            "╚════════════════════╝\n"
-            "```"
-        )
+        # Join VC
+        await status.edit("```\n╔════════════════════╗\n║ 🤖 Joining VC...   ║\n╠════════════════════╣\n║ ████████▱▱ 80%    ║\n╚════════════════════╝\n```")
         
         await ensure_userbot_in_chat(message.chat.id)
         
-        # Animate: Starting
-        await status.edit(
-            "```\n"
-            "╔════════════════════╗\n"
-            "║  ▶️ Starting...    ║\n"
-            "╠════════════════════╣\n"
-            "║ ██████████ 100%   ║\n"
-            "╚════════════════════╝\n"
-            "```"
-        )
+        # Play
+        await status.edit("```\n╔════════════════════╗\n║ ▶️ Starting...     ║\n╠════════════════════╣\n║ ██████████ 100%   ║\n╚════════════════════╝\n```")
         
-        await pytgcalls.play(
-            message.chat.id,
-            MediaStream(info['file_path'], audio_parameters=AudioQuality.HIGH)
-        )
+        try:
+            await pytgcalls.play(
+                message.chat.id,
+                MediaStream(info['file_path'], audio_parameters=AudioQuality.HIGH)
+            )
+        except (GroupCallNotFound, NoActiveGroupCall):
+            # VC not active, try to join and retry
+            logger.warning("[PLAY] VC not found, attempting to start")
+            await asyncio.sleep(2)
+            await pytgcalls.play(
+                message.chat.id,
+                MediaStream(info['file_path'], audio_parameters=AudioQuality.HIGH)
+            )
         
         current_playing[message.chat.id] = info
         
-        # CRITICAL: Only start timer if duration is valid!
-        if info['duration'] > 30:  # Only auto-skip songs longer than 30 seconds
-            logger.info(f"Starting auto-timer for {info['title']} - {info['duration']}s")
+        if info['duration'] > 30:
             asyncio.create_task(auto_end_handler(message.chat.id, info['duration']))
-        else:
-            logger.warning(f"Skipping auto-timer - duration too short or invalid: {info['duration']}s")
         
         await send_now_playing(message.chat.id, info)
-        
         await status.delete()
 
     except Exception as e:
-        await status.edit(f"```\n❌ Error\n```\n`{str(e)[:80]}`")
+        error_msg = str(e)
+        logger.error(f"[PLAY] Error: {error_msg}")
+        
+        # User-friendly error with reboot suggestion
+        if any(x in error_msg for x in ["400", "500", "timeout", "failed"]):
+            await status.edit(
+                "```\n╔════════════════════╗\n║ ⚠️ Playback Failed ║\n╚════════════════════╝\n```\n"
+                "**Try:** `/reboot` to reset the music system\n"
+                f"_Error: {error_msg[:50]}_"
+            )
+        else:
+            await status.edit(f"```\n❌ Error\n```\n`{error_msg[:80]}`\n\n**Try:** `/reboot`")
+
+# ==========================================
+# 🔄 REBOOT COMMAND
+# ==========================================
+@app.on_message(filters.command("reboot", config.COMMAND_PREFIXES) & filters.group)
+async def reboot_cmd(_, message):
+    """Reboot music system for this chat"""
+    chat_id = message.chat.id
+    
+    # Check admin
+    try:
+        member = await app.get_chat_member(chat_id, message.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await message.reply("```\n❌ Only admins can reboot\n```")
+            return
+    except:
+        pass
+    
+    status = await message.reply("```\n🔄 Rebooting music system...\n```")
+    
+    # Force cleanup
+    success = await force_cleanup(chat_id)
+    
+    if success:
+        await status.edit(
+            "```\n╔════════════════════╗\n║ ✅ System Rebooted ║\n╚════════════════════╝\n```\n"
+            "**All queues cleared**\n**Use `/play` to start fresh**"
+        )
+        logger.info(f"[REBOOT] Chat {chat_id} rebooted by {message.from_user.id}")
+    else:
+        await status.edit("```\n⚠️ Reboot attempted\n```\nTry `/play` again")
 
 # ==========================================
 # 🎵 OTHER COMMANDS
 # ==========================================
-
 @app.on_message(filters.command("stop", config.COMMAND_PREFIXES) & filters.group)
 async def stop_cmd(_, message):
     chat_id = message.chat.id
     if chat_id not in current_playing:
-        await message.reply("```\n❌ Nothing is playing\n```")
+        await message.reply("```\n❌ Nothing playing\n```")
         return
-    
-    # SIMPLIFIED ADMIN CHECK
-    user_id = message.from_user.id
     
     try:
-        member = await app.get_chat_member(chat_id, user_id)
-        user_status = member.status
+        member = await app.get_chat_member(chat_id, message.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await message.reply("```\n❌ Only admins can stop\n```")
+            return
     except:
-        user_status = "unknown"
+        pass
     
-    # Only block regular members
-    if user_status == "member" or user_status == "restricted" or user_status == "left":
-        await message.reply("```\n❌ Only admins can stop\n```")
-        return
-    
-    clear_queue(chat_id)
-    if chat_id in current_playing:
-        del current_playing[chat_id]
-        
-    await pytgcalls.leave_call(chat_id)
-    await message.reply(
-        "```\n╔════════════════════╗\n"
-        "║   ⏹️ Stopped        ║\n"
-        "╚════════════════════╝\n```"
-    )
+    await force_cleanup(chat_id)
+    await message.reply("```\n⏹️ Stopped & cleaned up\n```")
 
 @app.on_message(filters.command("skip", config.COMMAND_PREFIXES) & filters.group)
 async def skip_cmd(_, message):
@@ -394,29 +389,14 @@ async def skip_cmd(_, message):
         await message.reply("```\n❌ Nothing to skip\n```")
         return
     
-    # SIMPLIFIED ADMIN CHECK
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-    
     try:
-        member = await app.get_chat_member(chat_id, user_id)
-        user_status = member.status
-        
-        # Log for debugging
-        print(f"[SKIP] User: {message.from_user.first_name}, Status: {user_status}")
-        
-    except Exception as e:
-        # If we can't check, assume they're allowed (fail open)
-        print(f"[SKIP ERROR] {e}")
-        user_status = "member"  # Default to member, will skip check below
+        member = await app.get_chat_member(message.chat.id, message.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await message.reply("```\n❌ Only admins can skip\n```")
+            return
+    except:
+        pass
     
-    # Only block if we KNOW they're a regular member
-    if user_status == "member" or user_status == "restricted" or user_status == "left":
-        await message.reply("```\n❌ Only admins can skip\n```")
-        return
-    
-    # If creator, administrator, or check failed = allow
-    # Show who skipped
     user_name = message.from_user.first_name
     await message.reply(f"```\n⏭️ Skipped by {user_name}\n```")
     await play_next_song(message.chat.id)
@@ -426,18 +406,13 @@ async def pause_cmd(_, message):
     if message.chat.id not in current_playing:
         await message.reply("```\n❌ Nothing playing\n```")
         return
-    
-    # SIMPLIFIED ADMIN CHECK
     try:
         member = await app.get_chat_member(message.chat.id, message.from_user.id)
-        user_status = member.status
+        if member.status not in ["creator", "administrator"]:
+            await message.reply("```\n❌ Only admins\n```")
+            return
     except:
-        user_status = "unknown"
-    
-    if user_status == "member" or user_status == "restricted" or user_status == "left":
-        await message.reply("```\n❌ Only admins can pause\n```")
-        return
-        
+        pass
     try:
         await pytgcalls.pause_stream(message.chat.id)
         await message.reply("```\n⏸️ Paused\n```")
@@ -449,18 +424,13 @@ async def resume_cmd(_, message):
     if message.chat.id not in current_playing:
         await message.reply("```\n❌ Nothing playing\n```")
         return
-    
-    # SIMPLIFIED ADMIN CHECK
     try:
         member = await app.get_chat_member(message.chat.id, message.from_user.id)
-        user_status = member.status
+        if member.status not in ["creator", "administrator"]:
+            await message.reply("```\n❌ Only admins\n```")
+            return
     except:
-        user_status = "unknown"
-    
-    if user_status == "member" or user_status == "restricted" or user_status == "left":
-        await message.reply("```\n❌ Only admins can resume\n```")
-        return
-        
+        pass
     try:
         await pytgcalls.resume_stream(message.chat.id)
         await message.reply("```\n▶️ Resumed\n```")
@@ -470,8 +440,7 @@ async def resume_cmd(_, message):
 @app.on_message(filters.command("queue", config.COMMAND_PREFIXES) & filters.group)
 async def queue_cmd(_, message):
     queue = get_queue(message.chat.id)
-    
-    text = "```\n╔════════════════════╗\n║   🎵 Queue List   ║\n╚════════════════════╝\n```\n\n"
+    text = "```\n╔════════════════════╗\n║  🎵 Queue List     ║\n╚════════════════════╝\n```\n\n"
     
     if message.chat.id in current_playing:
         curr = current_playing[message.chat.id]
@@ -488,55 +457,43 @@ async def queue_cmd(_, message):
     await message.reply(text)
 
 # ==========================================
-# 🎛️ CALLBACKS (ADMIN ONLY!)
+# 🎛️ CALLBACKS
 # ==========================================
 @app.on_callback_query(filters.regex(r"^(stop|skip|pause|resume|close)"))
 async def cb_handler(_, query):
     action = query.data
     chat_id = query.message.chat.id
-    user_id = query.from_user.id
     
     if action == "close":
         await query.message.delete()
         return
 
-    # Check if user is admin
     try:
-        member = await app.get_chat_member(chat_id, user_id)
+        member = await app.get_chat_member(chat_id, query.from_user.id)
         if member.status not in ["creator", "administrator"]:
-            await query.answer("❌ Only admins can use this!", show_alert=True)
+            await query.answer("❌ Only admins!", show_alert=True)
             return
     except:
-        await query.answer("❌ Error checking permissions", show_alert=True)
-        return
+        pass
 
     if action == "stop":
-        clear_queue(chat_id)
-        if chat_id in current_playing: 
-            del current_playing[chat_id]
-        await pytgcalls.leave_call(chat_id)
+        await force_cleanup(chat_id)
         await query.message.delete()
         await query.answer("⏹️ Stopped")
-        
     elif action == "skip":
-        user_name = query.from_user.first_name
-        await query.answer(f"⏭️ Skipped by {user_name}")
+        await query.answer(f"⏭️ Skipped")
         await play_next_song(chat_id)
-        
     elif action == "pause":
         await pytgcalls.pause_stream(chat_id)
         await query.answer("⏸️ Paused")
-        
     elif action == "resume":
         await pytgcalls.resume_stream(chat_id)
         await query.answer("▶️ Resumed")
 
 # ==========================================
-# 🎨 COMPACT NOW PLAYING UI (like your reference)
+# 🎨 NOW PLAYING UI
 # ==========================================
 async def send_now_playing(chat_id, info):
-    """Clean, compact now playing message with mini-games!"""
-    
     buttons = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🎮 Tic Tac Toe", callback_data="game_tictactoe"),
@@ -547,15 +504,12 @@ async def send_now_playing(chat_id, info):
         ]
     ])
     
-    # Format duration
     if info['duration'] > 0:
-        mins = info['duration'] // 60
-        secs = info['duration'] % 60
+        mins, secs = info['duration'] // 60, info['duration'] % 60
         duration_str = f"{mins}:{secs:02d} Minutes"
     else:
         duration_str = "🔴 Live Stream"
     
-    # Clean title (max 60 chars)
     title = info['title'][:60] + ('...' if len(info['title']) > 60 else '')
     
     text = (
@@ -568,32 +522,22 @@ async def send_now_playing(chat_id, info):
     )
     
     try:
-        # Try with thumbnail
         if info.get('thumbnail'):
-            await app.send_photo(
-                chat_id, 
-                info['thumbnail'], 
-                caption=text, 
-                reply_markup=buttons
-            )
+            await app.send_photo(chat_id, info['thumbnail'], caption=text, reply_markup=buttons)
         else:
             await app.send_message(chat_id, text, reply_markup=buttons)
     except:
-        # Fallback without thumbnail
         try:
             await app.send_message(chat_id, text, reply_markup=buttons)
         except:
             pass
 
-# ==========================================
-# ℹ️ MODULE INFO
-# ==========================================
 __module__ = "Music"
 __help__ = """
 ```
-╔═══════════════════╗
-║  🎵 Music Player  ║
-╚═══════════════════╝
+╔════════════════════╗
+║  🎵 Music Player   ║
+╚════════════════════╝
 ```
 
 **Commands:**
@@ -603,6 +547,7 @@ __help__ = """
 • `/pause` - Pause
 • `/resume` - Resume
 • `/queue` - View queue
+• `/reboot` - Reset system (if stuck)
 
 *Powered by XBitCode API*
 """
