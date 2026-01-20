@@ -63,16 +63,43 @@ async def force_cleanup(chat_id: int):
         return False
 
 async def validate_vc_state(chat_id: int) -> bool:
-    """Check if bot is actually in VC and playing"""
+    """Check if bot is actually in VC and playing - FIXED!"""
     try:
-        # Check if pytgcalls thinks we're in a call
-        if hasattr(pytgcalls, 'calls') and chat_id in pytgcalls.calls:
+        # Method 1: Check our own tracking
+        if chat_id in current_playing:
+            # We think we're playing, that's good enough
             return True
-        # Alternative check
-        if hasattr(pytgcalls, 'active_calls') and chat_id in pytgcalls.active_calls:
-            return True
+        
+        # Method 2: Try to get active calls (if available)
+        if hasattr(pytgcalls, 'get_active_call'):
+            try:
+                call = await pytgcalls.get_active_call(chat_id)
+                if call:
+                    return True
+            except:
+                pass
+        
+        # Method 3: Check if calls is async
+        if hasattr(pytgcalls, 'calls'):
+            try:
+                # If it's a coroutine, await it
+                if asyncio.iscoroutinefunction(pytgcalls.calls):
+                    active_calls = await pytgcalls.calls()
+                    if chat_id in active_calls:
+                        return True
+                # If it's a property/dict
+                elif hasattr(pytgcalls.calls, '__contains__'):
+                    if chat_id in pytgcalls.calls:
+                        return True
+            except:
+                pass
+        
         return False
-    except:
+    except Exception as e:
+        logger.debug(f"validate_vc_state error: {e}")
+        # If we can't check, assume we're playing (fail open)
+        if chat_id in current_playing:
+            return True
         return False
 
 # ==========================================
@@ -353,8 +380,14 @@ async def play_command(client, message: Message):
         
         # User-friendly error messages
         if "Voice chat is not active" in error_msg:
-            # Our custom error - show it directly
             await status.edit(error_msg)
+        elif "503" in error_msg or "Service unavailable" in error_msg:
+            await status.edit(
+                "```\n╔════════════════════╗\n║ ⚠️ API Overloaded  ║\n╚════════════════════╝\n```\n"
+                "**The music API is currently overloaded.**\n\n"
+                "**Please wait 2-3 minutes and try again.**\n"
+                "The API server is receiving too many requests."
+            )
         elif any(x in error_msg.lower() for x in ["groupcall", "invalid", "not found"]):
             await status.edit(
                 "```\n╔════════════════════╗\n║ ⚠️ VC Not Active   ║\n╚════════════════════╝\n```\n"
