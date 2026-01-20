@@ -66,40 +66,14 @@ async def validate_vc_state(chat_id: int) -> bool:
     """Check if bot is actually in VC and playing"""
     try:
         # Check if pytgcalls thinks we're in a call
-        if chat_id in pytgcalls.calls:
+        if hasattr(pytgcalls, 'calls') and chat_id in pytgcalls.calls:
+            return True
+        # Alternative check
+        if hasattr(pytgcalls, 'active_calls') and chat_id in pytgcalls.active_calls:
             return True
         return False
     except:
         return False
-
-# ==========================================
-# 🎧 VOICE CHAT END DETECTION
-# ==========================================
-@pytgcalls.on_stream_end()
-async def on_stream_end(client: PyTgCalls, update):
-    """Triggered when song ends OR VC ends"""
-    chat_id = update.chat_id
-    
-    logger.info(f"[STREAM_END] Chat {chat_id}")
-    
-    # Check if VC is still active
-    try:
-        # Try to get chat
-        chat = await app.get_chat(chat_id)
-        
-        # If we're here, chat exists, try next song
-        await play_next_song(chat_id)
-        
-    except Exception as e:
-        # VC might have ended, cleanup
-        logger.warning(f"[STREAM_END] VC likely ended for {chat_id}: {e}")
-        await force_cleanup(chat_id)
-
-@pytgcalls.on_left()
-async def on_left_vc(client: PyTgCalls, chat_id: int):
-    """Triggered when bot leaves VC (kicked or VC ended)"""
-    logger.info(f"[LEFT_VC] Chat {chat_id}")
-    await force_cleanup(chat_id)
 
 # ==========================================
 # 🤖 ENHANCED USERBOT JOIN HANDLER
