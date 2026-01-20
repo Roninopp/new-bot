@@ -277,13 +277,17 @@ async def play_command(client, message: Message):
                 MediaStream(info['file_path'], audio_parameters=AudioQuality.HIGH)
             )
         except Exception as e:
-            # Check if VC not active error
-            if any(x in str(e).lower() for x in ["group call", "not found", "no active"]):
-                logger.warning("[PLAY] VC not found, attempting to start")
-                await asyncio.sleep(2)
-                await pytgcalls.play(
-                    message.chat.id,
-                    MediaStream(info['file_path'], audio_parameters=AudioQuality.HIGH)
+            error_str = str(e).lower()
+            # Check if VC-related errors
+            if any(x in error_str for x in ["groupcall", "group call", "not found", "invalid"]):
+                logger.warning(f"[PLAY] VC error: {e}")
+                # Explain to user
+                raise Exception(
+                    "❌ Voice chat is not active!\n\n"
+                    "**Please:**\n"
+                    "1️⃣ Start a voice chat first\n"
+                    "2️⃣ Then use `/play` again\n\n"
+                    "_The voice chat must be running before playing music._"
                 )
             else:
                 raise e
@@ -300,32 +304,48 @@ async def play_command(client, message: Message):
         error_msg = str(e)
         logger.error(f"[PLAY] Error: {error_msg}")
         
-        # User-friendly error with reboot suggestion
-        if any(x in error_msg for x in ["400", "500", "timeout", "failed"]):
+        # User-friendly error messages
+        if "Voice chat is not active" in error_msg:
+            # Our custom error - show it directly
+            await status.edit(error_msg)
+        elif any(x in error_msg.lower() for x in ["groupcall", "invalid", "not found"]):
+            await status.edit(
+                "```\n╔════════════════════╗\n║ ⚠️ VC Not Active   ║\n╚════════════════════╝\n```\n"
+                "**Voice chat is not running!**\n\n"
+                "**Steps:**\n"
+                "1️⃣ Start voice chat in group\n"
+                "2️⃣ Use `/play <song>` again\n"
+                "3️⃣ If still stuck, use `/reboot`"
+            )
+        elif any(x in error_msg for x in ["400", "500", "timeout", "failed"]):
             await status.edit(
                 "```\n╔════════════════════╗\n║ ⚠️ Playback Failed ║\n╚════════════════════╝\n```\n"
-                "**Try:** `/reboot` to reset the music system\n"
+                "**Try:** `/reboot` to reset\n"
                 f"_Error: {error_msg[:50]}_"
             )
         else:
             await status.edit(f"```\n❌ Error\n```\n`{error_msg[:80]}`\n\n**Try:** `/reboot`")
 
 # ==========================================
-# 🔄 REBOOT COMMAND
+# 🔄 REBOOT COMMAND (FIXED ADMIN CHECK!)
 # ==========================================
 @app.on_message(filters.command("reboot", config.COMMAND_PREFIXES) & filters.group)
 async def reboot_cmd(_, message):
     """Reboot music system for this chat"""
     chat_id = message.chat.id
     
-    # Check admin
+    # SIMPLIFIED ADMIN CHECK (same as /skip fix)
     try:
         member = await app.get_chat_member(chat_id, message.from_user.id)
-        if member.status not in ["creator", "administrator"]:
-            await message.reply("```\n❌ Only admins can reboot\n```")
-            return
-    except:
-        pass
+        user_status = member.status
+    except Exception as e:
+        logger.error(f"Admin check error: {e}")
+        user_status = "unknown"
+    
+    # Only block regular members
+    if user_status == "member" or user_status == "restricted" or user_status == "left":
+        await message.reply("```\n❌ Only admins can reboot\n```")
+        return
     
     status = await message.reply("```\n🔄 Rebooting music system...\n```")
     
