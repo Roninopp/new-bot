@@ -145,33 +145,50 @@ async def ensure_userbot_in_chat(chat_id: int, retries: int = 3):
 # 🤖 ROBUST AUTO-PLAY ENGINE
 # ==========================================
 async def auto_end_handler(chat_id, duration):
-    """Timer-based auto-skip with state validation"""
-    if duration <= 0 or duration < 30 or duration > 7200:
-        logger.info(f"[AUTO-SKIP] Invalid duration {duration}s for chat {chat_id}")
+    """Timer-based auto-skip with STRICT validation"""
+    
+    # CRITICAL: Validate duration first!
+    if duration <= 0:
+        logger.info(f"[AUTO-SKIP] Duration is 0 for {chat_id}, no timer")
         return
     
-    wait_time = duration + 10
-    logger.info(f"[AUTO-SKIP] Chat {chat_id}: Timer set for {wait_time}s")
+    # IMPORTANT: Songs under 60 seconds are often metadata errors!
+    if duration < 60:
+        logger.warning(f"[AUTO-SKIP] Short duration {duration}s for {chat_id} - might be wrong, setting longer buffer")
+        wait_time = max(duration + 30, 90)  # At least 90 seconds for short songs
+    elif duration < 120:
+        # Songs under 2 minutes - add big buffer
+        wait_time = duration + 20
+    else:
+        # Normal songs
+        wait_time = duration + 15  # Increased from 10 to 15 seconds
+    
+    logger.info(f"[AUTO-SKIP] Chat {chat_id}: Timer {wait_time}s (song: {duration}s)")
     
     await asyncio.sleep(wait_time)
 
-    # Validate state before auto-skip
+    # STRICT validation before auto-skip
     if chat_id not in current_playing:
-        logger.info(f"[AUTO-SKIP] Chat {chat_id}: Not playing anymore")
+        logger.info(f"[AUTO-SKIP] {chat_id}: Not playing anymore, cancelled")
         return
     
-    # Check if actually in VC
+    # Verify we're still in VC
     is_in_vc = await validate_vc_state(chat_id)
     if not is_in_vc:
-        logger.warning(f"[AUTO-SKIP] Chat {chat_id}: Not in VC, cleaning up")
+        logger.warning(f"[AUTO-SKIP] {chat_id}: Not in VC, cleaning up")
         await force_cleanup(chat_id)
         return
     
-    logger.info(f"[AUTO-SKIP] Chat {chat_id}: Triggering next song")
+    # Check if there's a next song in queue
+    queue = get_queue(chat_id)
+    if not queue or len(queue) == 0:
+        logger.info(f"[AUTO-SKIP] {chat_id}: No queue, will leave after this")
+    
+    logger.info(f"[AUTO-SKIP] {chat_id}: Triggering next song")
     await play_next_song(chat_id)
 
 async def play_next_song(chat_id):
-    """Play next song with state validation"""
+    """Play next song with robust validation"""
     next_song = get_next_song(chat_id)
     
     if next_song:
@@ -189,8 +206,12 @@ async def play_next_song(chat_id):
             )
             current_playing[chat_id] = next_song
             
-            if next_song['duration'] > 30:
+            # Start timer for next song with same smart logic
+            if next_song['duration'] > 0:
+                logger.info(f"[NEXT_SONG] Timer started: {next_song['duration']}s")
                 asyncio.create_task(auto_end_handler(chat_id, next_song['duration']))
+            else:
+                logger.warning(f"[NEXT_SONG] No duration, skipping timer")
             
             await send_now_playing(chat_id, next_song)
             logger.info(f"[NEXT_SONG] Playing: {next_song['title']}")
@@ -198,15 +219,23 @@ async def play_next_song(chat_id):
         except Exception as e:
             error_str = str(e).lower()
             # Check for VC-related errors
-            if any(x in error_str for x in ["group call", "not found", "no active"]):
+            if any(x in error_str for x in ["group call", "not found", "no active", "invalid"]):
                 logger.error(f"[NEXT_SONG] VC not active for {chat_id}")
                 await force_cleanup(chat_id)
+                try:
+                    await app.send_message(
+                        chat_id, 
+                        "```\n⚠️ Voice chat ended\n```\n"
+                        "Queue cleared. Start VC and use `/play` again."
+                    )
+                except:
+                    pass
             else:
                 logger.error(f"[NEXT_SONG] Error: {e}")
                 await force_cleanup(chat_id)
     else:
-        # Queue empty
-        logger.info(f"[NEXT_SONG] Queue empty for {chat_id}")
+        # Queue empty - leave VC
+        logger.info(f"[NEXT_SONG] Queue empty for {chat_id}, leaving")
         await force_cleanup(chat_id)
         try:
             await app.send_message(chat_id, "```\n✅ Queue finished\n```")
@@ -244,24 +273,36 @@ async def play_command(client, message: Message):
         
         info = await download_audio(url)
 
-        # Check if already playing
-        if message.chat.id in current_playing:
-            # Validate state
-            is_valid = await validate_vc_state(message.chat.id)
-            if not is_valid:
-                logger.warning(f"[PLAY] Ghost state detected, cleaning up")
-                await force_cleanup(message.chat.id)
-                # Continue to play as new
+        # Check if already playing - IMPROVED CHECK!
+        chat_id = message.chat.id
+        
+        # Double-check: Are we actually playing?
+        is_playing = False
+        if chat_id in current_playing:
+            # Verify we're still in VC
+            is_in_vc = await validate_vc_state(chat_id)
+            if is_in_vc:
+                is_playing = True
+                logger.info(f"[PLAY] Already playing, adding to queue for {chat_id}")
             else:
-                # Add to queue
-                add_to_queue(message.chat.id, info)
-                position = len(get_queue(message.chat.id))
-                mins, secs = info['duration'] // 60, info['duration'] % 60
-                await status.edit(
-                    f"```\n╔════════════════════╗\n║ ✅ Added to Queue  ║\n╚════════════════════╝\n```\n"
-                    f"**📍 Position:** `#{position}`\n**⏱ Duration:** `{mins}:{secs:02d}`"
-                )
-                return
+                # Ghost state! Clean it up
+                logger.warning(f"[PLAY] Ghost state detected for {chat_id}, cleaning")
+                await force_cleanup(chat_id)
+                is_playing = False
+        
+        if is_playing:
+            # Add to queue
+            add_to_queue(chat_id, info)
+            position = len(get_queue(chat_id))
+            mins, secs = info['duration'] // 60, info['duration'] % 60
+            
+            await status.edit(
+                f"```\n╔════════════════════╗\n║ ✅ Added to Queue  ║\n╚════════════════════╝\n```\n"
+                f"**📍 Position:** `#{position}`\n"
+                f"**🎵 Song:** `{info['title'][:40]}...`\n"
+                f"**⏱ Duration:** `{mins}:{secs:02d}`"
+            )
+            return
 
         # Join VC
         await status.edit("```\n╔════════════════════╗\n║ 🤖 Joining VC...   ║\n╠════════════════════╣\n║ ████████▱▱ 80%    ║\n╚════════════════════╝\n```")
@@ -294,8 +335,14 @@ async def play_command(client, message: Message):
         
         current_playing[message.chat.id] = info
         
-        if info['duration'] > 30:
+        # CRITICAL: Smart timer based on duration quality
+        if info['duration'] > 0:
+            # We have duration - use it with buffer
+            logger.info(f"[PLAY] Starting timer for {info['title']} - Duration: {info['duration']}s")
             asyncio.create_task(auto_end_handler(message.chat.id, info['duration']))
+        else:
+            # No duration (live stream or error) - don't auto-skip
+            logger.warning(f"[PLAY] No duration for {info['title']}, skipping auto-timer")
         
         await send_now_playing(message.chat.id, info)
         await status.delete()
