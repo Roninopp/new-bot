@@ -11,7 +11,6 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, 
 from pyrogram.errors import UserAlreadyParticipant, ChatAdminRequired, UserNotParticipant, InviteRequestSent
 from pytgcalls.types import MediaStream, AudioQuality
 from pytgcalls import PyTgCalls
-from pytgcalls.exceptions import GroupCallNotFound, NoActiveGroupCall
 
 # Setup Logger
 logger = logging.getLogger(__name__)
@@ -52,10 +51,10 @@ async def force_cleanup(chat_id: int):
         # Try to leave call
         try:
             await pytgcalls.leave_call(chat_id)
-        except (GroupCallNotFound, NoActiveGroupCall):
-            pass  # Already not in call
         except Exception as e:
-            logger.error(f"Error leaving call: {e}")
+            # Ignore errors - might not be in call
+            logger.debug(f"Leave call error (expected): {e}")
+            pass
         
         logger.info(f"[CLEANUP] Chat {chat_id} cleaned up successfully")
         return True
@@ -222,12 +221,15 @@ async def play_next_song(chat_id):
             await send_now_playing(chat_id, next_song)
             logger.info(f"[NEXT_SONG] Playing: {next_song['title']}")
             
-        except (GroupCallNotFound, NoActiveGroupCall):
-            logger.error(f"[NEXT_SONG] VC not active for {chat_id}")
-            await force_cleanup(chat_id)
         except Exception as e:
-            logger.error(f"[NEXT_SONG] Error: {e}")
-            await force_cleanup(chat_id)
+            error_str = str(e).lower()
+            # Check for VC-related errors
+            if any(x in error_str for x in ["group call", "not found", "no active"]):
+                logger.error(f"[NEXT_SONG] VC not active for {chat_id}")
+                await force_cleanup(chat_id)
+            else:
+                logger.error(f"[NEXT_SONG] Error: {e}")
+                await force_cleanup(chat_id)
     else:
         # Queue empty
         logger.info(f"[NEXT_SONG] Queue empty for {chat_id}")
@@ -300,14 +302,17 @@ async def play_command(client, message: Message):
                 message.chat.id,
                 MediaStream(info['file_path'], audio_parameters=AudioQuality.HIGH)
             )
-        except (GroupCallNotFound, NoActiveGroupCall):
-            # VC not active, try to join and retry
-            logger.warning("[PLAY] VC not found, attempting to start")
-            await asyncio.sleep(2)
-            await pytgcalls.play(
-                message.chat.id,
-                MediaStream(info['file_path'], audio_parameters=AudioQuality.HIGH)
-            )
+        except Exception as e:
+            # Check if VC not active error
+            if any(x in str(e).lower() for x in ["group call", "not found", "no active"]):
+                logger.warning("[PLAY] VC not found, attempting to start")
+                await asyncio.sleep(2)
+                await pytgcalls.play(
+                    message.chat.id,
+                    MediaStream(info['file_path'], audio_parameters=AudioQuality.HIGH)
+                )
+            else:
+                raise e
         
         current_playing[message.chat.id] = info
         
