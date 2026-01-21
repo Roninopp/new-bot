@@ -468,13 +468,22 @@ async def skip_cmd(_, message):
         await message.reply("```\n❌ Nothing to skip\n```")
         return
     
+    # SIMPLIFIED ADMIN CHECK (same as /reboot!)
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
     try:
-        member = await app.get_chat_member(message.chat.id, message.from_user.id)
-        if member.status not in ["creator", "administrator"]:
-            await message.reply("```\n❌ Only admins can skip\n```")
-            return
-    except:
-        pass
+        member = await app.get_chat_member(chat_id, user_id)
+        user_status = member.status
+        logger.info(f"[SKIP] User {user_id} status: {user_status}")
+    except Exception as e:
+        logger.error(f"[SKIP] Admin check error: {e}")
+        user_status = "unknown"
+    
+    # Only block if we KNOW they're a regular member
+    if user_status == "member" or user_status == "restricted" or user_status == "left":
+        await message.reply("```\n❌ Only admins can skip\n```")
+        return
     
     user_name = message.from_user.first_name
     await message.reply(f"```\n⏭️ Skipped by {user_name}\n```")
@@ -485,13 +494,18 @@ async def pause_cmd(_, message):
     if message.chat.id not in current_playing:
         await message.reply("```\n❌ Nothing playing\n```")
         return
+    
+    # SIMPLIFIED ADMIN CHECK
     try:
         member = await app.get_chat_member(message.chat.id, message.from_user.id)
-        if member.status not in ["creator", "administrator"]:
-            await message.reply("```\n❌ Only admins\n```")
-            return
-    except:
-        pass
+        user_status = member.status
+    except Exception as e:
+        logger.error(f"[PAUSE] Admin check error: {e}")
+        user_status = "unknown"
+    
+    if user_status == "member" or user_status == "restricted" or user_status == "left":
+        await message.reply("```\n❌ Only admins\n```")
+        return
     try:
         await pytgcalls.pause_stream(message.chat.id)
         await message.reply("```\n⏸️ Paused\n```")
@@ -503,18 +517,72 @@ async def resume_cmd(_, message):
     if message.chat.id not in current_playing:
         await message.reply("```\n❌ Nothing playing\n```")
         return
+    
+    # SIMPLIFIED ADMIN CHECK
     try:
         member = await app.get_chat_member(message.chat.id, message.from_user.id)
-        if member.status not in ["creator", "administrator"]:
-            await message.reply("```\n❌ Only admins\n```")
-            return
-    except:
-        pass
+        user_status = member.status
+    except Exception as e:
+        logger.error(f"[RESUME] Admin check error: {e}")
+        user_status = "unknown"
+    
+    if user_status == "member" or user_status == "restricted" or user_status == "left":
+        await message.reply("```\n❌ Only admins\n```")
+        return
     try:
         await pytgcalls.resume_stream(message.chat.id)
         await message.reply("```\n▶️ Resumed\n```")
     except:
         await message.reply("```\n❌ Failed\n```")
+
+@app.on_message(filters.command("seek", config.COMMAND_PREFIXES) & filters.group)
+async def seek_cmd(_, message):
+    """Seek forward 10 seconds in current song"""
+    chat_id = message.chat.id
+    
+    if chat_id not in current_playing:
+        await message.reply("```\n❌ Nothing playing\n```")
+        return
+    
+    # SIMPLIFIED ADMIN CHECK
+    try:
+        member = await app.get_chat_member(chat_id, message.from_user.id)
+        user_status = member.status
+    except Exception as e:
+        logger.error(f"[SEEK] Admin check error: {e}")
+        user_status = "unknown"
+    
+    if user_status == "member" or user_status == "restricted" or user_status == "left":
+        await message.reply("```\n❌ Only admins\n```")
+        return
+    
+    try:
+        # Get current time
+        if hasattr(pytgcalls, 'get_call'):
+            try:
+                call = await pytgcalls.get_call(chat_id)
+                if call and hasattr(call, 'played_time'):
+                    current_time = call.played_time
+                    new_time = current_time + 10  # Seek 10 seconds forward
+                    
+                    # Seek to new position
+                    await pytgcalls.seek_stream(chat_id, new_time)
+                    await message.reply("```\n⏩ Skipped 10 seconds\n```")
+                    logger.info(f"[SEEK] {chat_id}: {current_time}s → {new_time}s")
+                    return
+            except:
+                pass
+        
+        # Fallback: If seek not supported, just skip to next
+        await message.reply(
+            "```\n⚠️ Seek not supported\n```\n"
+            "Your PyTgCalls version doesn't support seeking.\n"
+            "Use `/skip` to go to next song instead."
+        )
+        
+    except Exception as e:
+        logger.error(f"[SEEK] Error: {e}")
+        await message.reply("```\n❌ Seek failed\n```")
 
 @app.on_message(filters.command("queue", config.COMMAND_PREFIXES) & filters.group)
 async def queue_cmd(_, message):
@@ -621,12 +689,19 @@ __help__ = """
 
 **Commands:**
 • `/play <song>` - Play music
-• `/skip` - Skip current
-• `/stop` - Stop & clear
-• `/pause` - Pause
-• `/resume` - Resume
+• `/skip` - Skip current song
+• `/stop` - Stop & clear queue
+• `/pause` - Pause playback
+• `/resume` - Resume playback
+• `/seek` - Skip forward 10 seconds
 • `/queue` - View queue
 • `/reboot` - Reset system (if stuck)
+
+**Features:**
+✨ Queue support
+🎮 Mini-games while listening
+⏩ Seek forward in songs
+🔄 Auto-play next song
 
 *Powered by XBitCode API*
 """
