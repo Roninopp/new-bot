@@ -233,10 +233,14 @@ async def toggle_bio_scanner(client: Client, message: Message):
     """
     Enables or disables bio scanner for the group.
     """
-    # Check if user is admin
-    user_member = await message.chat.get_member(message.from_user.id)
-    if user_member.status not in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR]:
-        await message.reply_text("❌ Only admins can use this command!")
+    try:
+        # Check if user is admin
+        user_member = await message.chat.get_member(message.from_user.id)
+        if user_member.status not in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR]:
+            await message.reply_text("❌ Only admins can use this command!")
+            return
+    except Exception as e:
+        await message.reply_text(f"❌ Error checking admin status: {e}")
         return
     
     chat_id = message.chat.id
