@@ -59,6 +59,7 @@ imposter_collection = db.ImposterUsersInfo
 locks_collection = db.ChatLocks
 warnings_collection = db.WarnData
 log_channel_collection = db.LogChannel
+bio_scanner_collection = db.BioScanner
 nightmode_collection = db.NightMode
 cleaner_collection = db.CleanerData
 gmute_collection = db.GMutedUsers
