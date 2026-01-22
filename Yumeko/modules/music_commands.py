@@ -378,6 +378,22 @@ async def play_command(client, message: Message):
         error_msg = str(e)
         logger.error(f"[PLAY] Error: {error_msg}")
         
+        # Check for FFmpeg/FFprobe errors
+        if "ffmpeg" in error_msg.lower() or "ffprobe" in error_msg.lower():
+            await status.edit(
+                "```\n╔════════════════════════════╗\n║ ⚠️ FFmpeg Not Installed   ║\n╚════════════════════════════╝\n```\n"
+                "**FFmpeg is required but not installed!**\n\n"
+                "**For Heroku:**\n"
+                "1️⃣ Go to app Settings\n"
+                "2️⃣ Add buildpack:\n"
+                "`https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest.git`\n"
+                "3️⃣ Redeploy app\n\n"
+                "**For VPS/Local:**\n"
+                "• Ubuntu/Debian: `sudo apt install ffmpeg`\n"
+                "• CentOS: `sudo yum install ffmpeg`"
+            )
+            return
+        
         # User-friendly error messages
         if "Voice chat is not active" in error_msg:
             await status.edit(error_msg)
