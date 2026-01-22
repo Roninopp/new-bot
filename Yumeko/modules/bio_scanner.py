@@ -2,9 +2,10 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, ChatMemberUpdated
 from pyrogram.enums import ChatMemberStatus
 from Yumeko import app, log as logger
-import config
+from config import config
 import re
 from Yumeko.decorator.errors import error
+from Yumeko.decorator.save import save
 from Yumeko.database.bio_scanner_db import (
     add_bio_warn,
     get_bio_warns,
@@ -166,8 +167,9 @@ async def scan_bio_on_message(client: Client, message: Message):
         logger.error(f"Bio Scanner error in scan_bio_on_message: {e}", exc_info=True)
 
 
-@app.on_message(filters.command("free", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("free", prefixes=config.COMMAND_PREFIXES) & filters.group)
 @error
+@save
 async def approve_user_bio(client: Client, message: Message):
     """
     Allows admins to approve users to keep links in bio.
@@ -208,8 +210,9 @@ async def approve_user_bio(client: Client, message: Message):
     )
 
 
-@app.on_message(filters.command("unfree", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("unfree", prefixes=config.COMMAND_PREFIXES) & filters.group)
 @error
+@save
 async def unapprove_user_bio(client: Client, message: Message):
     """
     Removes bio approval from a user.
@@ -241,8 +244,9 @@ async def unapprove_user_bio(client: Client, message: Message):
     await message.reply_text(f"❌ {target_user.mention} bio approval has been **removed**!")
 
 
-@app.on_message(filters.command("bioscan", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("bioscan", prefixes=config.COMMAND_PREFIXES) & filters.group)
 @error
+@save
 async def toggle_bio_scanner(client: Client, message: Message):
     """
     Enables or disables bio scanner for the group.
@@ -288,8 +292,9 @@ async def toggle_bio_scanner(client: Client, message: Message):
         )
 
 
-@app.on_message(filters.command("biowarns", prefixes=config.config.COMMAND_PREFIXES) & filters.group)
+@app.on_message(filters.command("biowarns", prefixes=config.COMMAND_PREFIXES) & filters.group)
 @error
+@save
 async def check_bio_warns(client: Client, message: Message):
     """
     Check bio warning count for a user.
