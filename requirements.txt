@@ -34,7 +34,8 @@ youtube-search-python
 beautifulsoup4
 Pyrofork
 TgCrypto
-
+pyrogram>=2.0
+telethon>=1.27
 
 # ===== MUSIC BOT REQUIREMENTS (WITH PO_TOKEN) =====
 ntgcalls==2.0.6
