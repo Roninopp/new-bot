@@ -9,12 +9,12 @@ gpytranslate
 gtts
 httpx[http2]==0.27.2
 motor
+telegraph
 moviepy
 numpy
 opencv-python
 pillow
 psutil
-pyjokes
 pytz
 python-telegram-bot
 requests
