@@ -17,19 +17,6 @@ from Yumeko.decorator.save import save
 from Yumeko.decorator.errors import error
 from pyrogram import Client
 
-# ========== MUSIC BOT IMPORT ==========
-try:
-    from Yumeko.modules.music import userbot, pytgcalls
-    MUSIC_ENABLED = True
-    log.info("🎵 Music module loaded!")
-except ImportError as e:
-    MUSIC_ENABLED = False
-    log.warning(f"⚠️ Music disabled: {e}")
-except Exception as e:
-    MUSIC_ENABLED = False
-    log.error(f"❌ Music error: {e}")
-# ======================================
-
 
 MODULES = ["modules", "watchers", "admin", "decorator"]
 LOADED_MODULES = {}
@@ -253,7 +240,7 @@ async def help_command(client, message: Message):
     await message.reply_photo(
         photo=config.HELP_IMG_URL,
         caption=f"**[❖] Help Menu!**\n"
-             "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
+             "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
              f"🔹 **ᴀᴠᴀɪʟᴀʙʟᴇ ᴘʀᴇғɪxᴇs:** {prefixes} \n\n"
              f" **ғᴏᴜɴᴅ ᴀ ʙᴜɢ? ?**\n"
              "ʀᴇᴘᴏʀᴛ ɪᴛ ᴜsɪɴɢ ᴛʜᴇ /bug ᴄᴏᴍᴍᴀɴᴅ.",
@@ -269,7 +256,7 @@ async def show_help_menu(client, query: CallbackQuery):
         media=InputMediaPhoto(
             config.HELP_IMG_URL,
             caption=f"**[❖] Help Menu!**\n"
-             "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
+             "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
              f"🔹 **ᴀᴠᴀɪʟᴀʙʟᴇ ᴘʀᴇғɪxᴇs:** {prefixes} \n\n"
              f" **ғᴏᴜɴᴅ ᴀ ʙᴜɢ? ?**\n"
              "ʀᴇᴘᴏʀᴛ ɪᴛ ᴜsɪɴɢ ᴛʜᴇ /bug ᴄᴏᴍᴍᴀɴᴅ."
@@ -310,7 +297,7 @@ async def handle_pagination_callback(client, query: CallbackQuery):
 
         await query.message.edit_caption(
             caption=f"**[❖] Help Menu!**\n"
-             "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
+             "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
              f"🔹 **ᴀᴠᴀɪʟᴀʙʟᴇ ᴘʀᴇғɪxᴇs:** {prefixes} \n\n"
              f" **ғᴏᴜɴᴅ ᴀ ʙᴜɢ? ?**\n"
              "ʀᴇᴘᴏʀᴛ ɪᴛ ᴜsɪɴɢ ᴛʜᴇ /bug ᴄᴏᴍᴍᴀɴᴅ.",
@@ -328,7 +315,7 @@ async def handle_main_menu_callback(client, query: CallbackQuery):
         media=InputMediaPhoto(
             config.HELP_IMG_URL,
             caption=f"**[❖] Help Menu!**\n"
-             "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
+             "**» ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ ᴛᴏ ɢᴇᴛ ᴅᴇsᴄʀɪᴘᴛɪᴏɴ ᴀʙᴏᴜᴛ sᴘᴇᴄɪғɪᴄ ᴄᴏᴍᴍᴀɴᴅs.\n ──────────────────.**\n"
              f"🔹 **ᴀᴠᴀɪʟᴀʙʟᴇ ᴘʀᴇғɪxᴇs:** {prefixes} \n\n"
              f" **ғᴏᴜɴᴅ ᴀ ʙᴜɢ? ?**\n"
              "ʀᴇᴘᴏʀᴛ ɪᴛ ᴜsɪɴɢ ᴛʜᴇ /bug ᴄᴏᴍᴍᴀɴᴅ."
@@ -354,15 +341,6 @@ def main():
     load_all_modules()
 
     try:
-        # ========== START MUSIC BOT FIRST ==========
-        if MUSIC_ENABLED:
-            log.info("🎵 Starting music userbot...")
-            userbot.start()
-            log.info("🎵 Starting PyTgCalls...")
-            pytgcalls.start()
-            log.info("✅ Music bot ready!")
-        # ===========================================
-        
         # Start main bot
         app.start()
         initialize_services()
@@ -381,15 +359,6 @@ def main():
 
             bot_details = await app.get_me()
             log.info(f"Bot Configured: Name: {bot_details.first_name}, ID: {bot_details.id}, Username: @{bot_details.username}")
-            
-            # ========== LOG MUSIC BOT STATUS ==========
-            if MUSIC_ENABLED:
-                try:
-                    userbot_details = await userbot.get_me()
-                    log.info(f"🎵 Music Userbot: {userbot_details.first_name} (@{userbot_details.username})")
-                except Exception as e:
-                    log.error(f"❌ Failed to get userbot details: {e}")
-            # ==========================================
 
         loop.run_until_complete(initialize_async_components())
         log.info("Bot started. Press Ctrl+C to stop.")
@@ -397,16 +366,6 @@ def main():
         
         cleanup()
     
-        # ========== STOP MUSIC BOT ==========
-        if MUSIC_ENABLED:
-            try:
-                pytgcalls.stop()
-                userbot.stop()
-                log.info("🎵 Music bot stopped")
-            except Exception as e:
-                log.error(f"Error stopping music bot: {e}")
-        # ====================================
-        
         app.stop()
 
     except Exception as e:
