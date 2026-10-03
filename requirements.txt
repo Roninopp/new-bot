@@ -2,6 +2,7 @@ aiofiles
 Python_ARQ
 aiohttp==3.9.5
 apscheduler
+yt_dlp
 asyncio
 blackpink
 cachetools
