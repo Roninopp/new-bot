@@ -11,7 +11,7 @@ class config:
     
     # Note: API_ID and API_HASH were duplicates here, I removed them to avoid confusion.
     
-    BOT_TOKEN = "8521895709:AAEbq9gKv7xAaDQ2Vtcb_R4AtjRTQoKrhxM"
+    BOT_TOKEN = "8995217063:AAFZzTJm1EpAoJNeuETUlOMdYQtNOTGdvWY"
     BOT_NAME = "Maria"
     BOT_USERNAME = "@MariaModBot"
     BOT_ID = 8521895709
@@ -35,8 +35,8 @@ class config:
     SUPPORT_CHAT = -1003103484269
     SUPPORT_CHAT_USERNAME = "black_hawk_Division"
     SUPPORT_CHAT_LINK = "https://t.me/Black_Hawk_Division"
-    LOG_CHANNEL = -1003123258753
-    ERROR_LOG_CHANNEL = -1003123258753
+    LOG_CHANNEL = -1003103484269
+    ERROR_LOG_CHANNEL = -1003103484269
     DOWNLOAD_LOCATION = "./downloads"
     COMMAND_PREFIXES = ["/" , "!" , "." , "#" , "$" , "%" , "&" , "?"] 
     CMD_STARTERS = "/.!&#%$"
